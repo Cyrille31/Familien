@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Familien</title>
+  <meta name="description" content="Arbre généalogique à partir de votre fichier Google Sheets, utilisable hors ligne.">
+  <meta name="theme-color" content="#1f6f62">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/logo.svg" type="image/svg+xml">
+  <link rel="icon" href="icons/icon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Familien">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <img src="icons/logo.svg" alt="" class="brand-logo" width="34" height="34">
+    <h1 class="brand">Familien</h1>
+    <span class="spacer"></span>
+    <button id="btnCheck" class="icon-btn" title="Vérifier si le fichier a changé sur le Drive" aria-label="Vérifier le Drive">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.3-4.9M4 4v4h4M4 13a8 8 0 0 0 14.3 4.9M20 20v-4h-4"/></svg>
+      <span class="btn-label">Drive</span>
+      <span id="updateDot" class="dot" hidden></span>
+    </button>
+    <button id="btnSettings" class="icon-btn" title="Réglages" aria-label="Réglages">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    </button>
+  </header>
+
+  <div class="searchbar">
+    <div class="search-wrap">
+      <svg viewBox="0 0 24 24" class="search-ico" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="search" type="search" placeholder="Nom d'une personne…" autocomplete="off" autocapitalize="words" spellcheck="false" aria-label="Rechercher une personne">
+      <ul id="results" class="results" role="listbox" hidden></ul>
+    </div>
+  </div>
+
+  <main id="stage">
+    <svg id="treeSvg" class="tree" aria-label="Arbre généalogique"><g id="viewport"></g></svg>
+
+    <section id="empty" class="empty">
+      <img src="icons/logo.svg" alt="" width="96" height="96">
+      <h2 id="emptyTitle">Bienvenue dans Familien</h2>
+      <p id="emptyText">Reliez votre fichier généalogique Google Sheets pour commencer.</p>
+      <button id="btnStart" class="btn primary">Relier mon fichier</button>
+    </section>
+
+    <div id="toolbar" class="toolbar" hidden>
+      <label class="gen" title="Générations d'ascendants">
+        <span><span class="long">▲ Ascendants</span><span class="short">▲ Asc.</span></span>
+        <select id="ancDepth"></select>
+      </label>
+      <label class="gen" title="Générations de descendants">
+        <span><span class="long">▼ Descendants</span><span class="short">▼ Desc.</span></span>
+        <select id="descDepth"></select>
+      </label>
+      <span class="spacer"></span>
+      <button id="zoomOut" class="icon-btn small" aria-label="Dézoomer">−</button>
+      <button id="zoomFit" class="icon-btn small" aria-label="Voir tout l'arbre" title="Voir tout l'arbre">⤢</button>
+      <button id="zoomIn" class="icon-btn small" aria-label="Zoomer">+</button>
+      <button id="btnExport" class="icon-btn small" aria-label="Exporter l'arbre" title="Exporter / partager l'arbre">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>
+      </button>
+    </div>
+    <div id="treeInfo" class="tree-info" hidden></div>
+  </main>
+
+  <aside id="panel" class="panel" hidden aria-live="polite">
+    <button id="panelClose" class="panel-close" aria-label="Fermer">×</button>
+    <div id="panelBody"></div>
+  </aside>
+
+  <!-- Réglages / source -->
+  <dialog id="dlgSettings" class="dialog">
+    <form method="dialog" class="dlg-head">
+      <h2>Réglages</h2>
+      <button class="icon-btn" value="close" aria-label="Fermer">×</button>
+    </form>
+    <div class="dlg-body">
+      <section>
+        <h3>Fichier Google Sheets</h3>
+        <label class="field">
+          <span>Adresse (lien de partage) du fichier</span>
+          <input id="sheetUrl" type="url" inputmode="url" placeholder="https://docs.google.com/spreadsheets/d/…" autocomplete="off">
+        </label>
+        <button id="btnDownload" class="btn primary">Télécharger depuis le Drive</button>
+        <p class="hint">Dans Google Sheets : <b>Partager</b> → « Accès général » → <b>Tous les utilisateurs disposant du lien</b> (Lecteur), puis copiez le lien.
+          Pour utiliser un autre onglet, ouvrez-le avant de copier le lien.</p>
+        <div class="alt-row">
+          <label class="btn ghost file-btn">Importer un fichier CSV<input id="fileInput" type="file" accept=".csv,.tsv,.txt,text/csv"></label>
+          <button id="btnDemo" class="btn ghost">Essayer avec un exemple</button>
+        </div>
+        <div id="sourceInfo" class="info-box" hidden></div>
+      </section>
+
+      <section>
+        <h3>Mises à jour</h3>
+        <label class="check">
+          <input id="autoCheck" type="checkbox">
+          <span>Vérifier au démarrage si le fichier a changé (uniquement si connecté). Rien n'est remplacé sans votre accord.</span>
+        </label>
+      </section>
+
+      <section id="mappingSection" hidden>
+        <h3>Colonnes du fichier</h3>
+        <p class="hint">Les colonnes ont été reconnues automatiquement. Corrigez si besoin.</p>
+        <div id="mappingGrid" class="mapping"></div>
+        <button id="btnApplyMapping" class="btn">Appliquer</button>
+      </section>
+
+      <section>
+        <h3>Installer sur l'appareil</h3>
+        <button id="btnInstall" class="btn" hidden>Installer l'application</button>
+        <ul class="hint list">
+          <li><b>iPhone / iPad</b> : dans Safari, bouton Partager → « Sur l'écran d'accueil ».</li>
+          <li><b>Android</b> : dans Chrome, menu ⋮ → « Installer l'application ».</li>
+          <li><b>PC / Mac</b> : icône d'installation à droite de la barre d'adresse (Chrome, Edge).</li>
+        </ul>
+        <p class="hint">Une fois installée, l'application fonctionne sans connexion : le fichier est gardé sur l'appareil.</p>
+      </section>
+
+      <section>
+        <button id="btnClear" class="btn danger">Effacer les données de cet appareil</button>
+        <p class="hint small" id="appVersion"></p>
+      </section>
+    </div>
+  </dialog>
+
+  <!-- Alerte de mise à jour -->
+  <dialog id="dlgUpdate" class="dialog narrow">
+    <div class="dlg-body">
+      <div class="update-ico">🔔</div>
+      <h2>Le fichier a changé sur le Drive</h2>
+      <p id="updateText"></p>
+      <div class="actions">
+        <button id="btnRefuse" class="btn ghost">Garder ma version</button>
+        <button id="btnAccept" class="btn primary">Mettre à jour</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Export -->
+  <dialog id="dlgExport" class="dialog narrow">
+    <form method="dialog" class="dlg-head">
+      <h2>Exporter l'arbre</h2>
+      <button class="icon-btn" value="close" aria-label="Fermer">×</button>
+    </form>
+    <div class="dlg-body">
+      <button id="expPng" class="btn block">Image (PNG)</button>
+      <button id="expSvg" class="btn block">Image vectorielle (SVG, idéale pour imprimer)</button>
+    </div>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
