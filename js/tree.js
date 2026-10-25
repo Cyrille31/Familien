@@ -170,12 +170,13 @@ function truncate(s, max) {
 }
 
 function lifeLine(p) {
-  const b = p.birthYear || (p.birthDate ? p.birthDate : '');
-  const d = p.deathYear || (p.deathDate ? p.deathDate : '');
+  const b = p.birthYear || p.birthDate || '';
+  const unknownDeath = p.deceased && !p.deathYear && /inconnue/.test(p.deathDate);
+  const d = p.deathYear || (unknownDeath ? '' : p.deathDate || '');
   if (b && d) return `${truncate(b, 10)} – ${truncate(d, 10)}`;
-  if (b) return `° ${truncate(b, 18)}`;
+  if (b) return unknownDeath ? `${truncate(b, 14)} – †` : `° ${truncate(b, 18)}`;
   if (d) return `† ${truncate(d, 18)}`;
-  return '';
+  return unknownDeath ? '†' : '';
 }
 
 // Dessine le contenu de l'arbre dans un <g>.
@@ -272,7 +273,7 @@ export class PanZoom {
     const s = Math.min(W / bbox.w, H / bbox.h, 1.1);
     if (focusRoot && s < 0.4) {
       // Arbre trop grand pour être lisible en entier : on centre sur la personne choisie
-      this.s = Math.min(0.8, W / (BOX_W * 2.4));
+      this.s = Math.min(0.7, W / (BOX_W * 3.2));
       this.tx = W / 2;
       this.ty = top + H / 2;
     } else {

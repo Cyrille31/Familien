@@ -1,3 +1,5 @@
+import { findHeaderRow, headersSignature } from './model.js';
+
 // Lecture des fichiers importés depuis l'appareil : CSV, ou page Google Sheets
 // enregistrée (.mht / .mhtml « page web » ou .html), dont on extrait le tableau.
 
@@ -49,12 +51,11 @@ function mhtmlHtmlParts(raw) {
   return parts;
 }
 
-// Convertit le plus grand tableau d'une page en lignes de cellules.
-function htmlTableRows(html) {
+// Lit tous les tableaux d'une page (un par onglet Google Sheets).
+function htmlTables(html) {
   const doc = new DOMParser().parseFromString(html, 'text/html');
-  const tables = [...doc.querySelectorAll('table')];
-  let best = null;
-  for (const table of tables) {
+  const out = [];
+  for (const table of doc.querySelectorAll('table')) {
     const rows = [];
     for (const tr of table.querySelectorAll('tbody tr, :scope > tr')) {
       const cells = [];
@@ -62,16 +63,32 @@ function htmlTableRows(html) {
         // Google Sheets : les <th> sont les numéros de ligne / lettres de colonne
         if (cell.tagName !== 'TD' || /freezebar/.test(cell.className)) continue;
         cell.querySelectorAll('br').forEach((br) => br.replaceWith('\n'));
-        const text = cell.textContent.replace(/ /g, ' ').trim();
+        const text = cell.textContent.replace(/\u00a0/g, ' ').trim();
         const span = Math.max(1, Number(cell.getAttribute('colspan')) || 1);
         cells.push(text);
         for (let k = 1; k < span; k++) cells.push('');
       }
       if (cells.some((c) => c !== '')) rows.push(cells);
     }
-    if (rows.length && (!best || rows.length > best.length)) best = rows;
+    if (rows.length >= 2) out.push(rows);
   }
-  return best;
+  return out;
+}
+
+// Réunit les onglets qui ont les mêmes colonnes ; sinon garde le plus grand.
+function mergeTables(tables) {
+  const groups = new Map();
+  for (const rows of tables) {
+    const h = findHeaderRow(rows);
+    const sig = headersSignature(rows[h].map((c) => c.split('\n').join(' ')));
+    if (!groups.has(sig)) groups.set(sig, { rows: rows.slice(0, h + 1), count: 0 });
+    const g = groups.get(sig);
+    g.rows.push(...rows.slice(h + 1));
+    g.count += rows.length - h - 1;
+  }
+  let best = null;
+  for (const g of groups.values()) if (!best || g.count > best.count) best = g;
+  return best?.rows;
 }
 
 function rowsToCsv(rows) {
@@ -95,11 +112,7 @@ export async function fileToCsv(file) {
   const isHtml = /\.(html?|xhtml)$/.test(name) || /^\s*(<!doctype html|<html)/i.test(head);
   if (!isMhtml && !isHtml) return text;
   const pages = isMhtml ? mhtmlHtmlParts(text) : [text];
-  let best = null;
-  for (const html of pages) {
-    const rows = htmlTableRows(html);
-    if (rows && (!best || rows.length > best.length)) best = rows;
-  }
+  const best = mergeTables(pages.flatMap(htmlTables));
   if (!best || best.length < 2) throw new Error("Aucun tableau de données trouvé dans ce fichier.");
   return rowsToCsv(best);
 }
