@@ -1,18 +1,19 @@
 // Accès au fichier Google Sheets / Google Drive. Appelé uniquement sur demande.
 
 export function parseSheetUrl(input) {
-  const s = (input || '').trim();
+  // Retire la ponctuation collée par erreur en fin de lien
+  const s = (input || '').trim().replace(/[\s,;.)\]>»"']+$/, '');
   if (!s) return null;
   const gid = (s.match(/[#&?]gid=(\d+)/) || [])[1];
   const gidParam = gid ? `&gid=${gid}` : '';
 
   // Feuille « publiée sur le Web »
-  let m = s.match(/\/spreadsheets\/d\/e\/([\w-]+)/);
+  let m = s.match(/\/spreadsheets\/(?:u\/\d+\/)?d\/e\/([\w-]+)/);
   if (m) {
     return { id: m[1], gid, urls: [`https://docs.google.com/spreadsheets/d/e/${m[1]}/pub?output=csv${gidParam}`] };
   }
   // Lien de partage classique (ou lien Drive vers une feuille Google)
-  m = s.match(/\/spreadsheets\/d\/([\w-]+)/) || s.match(/\/file\/d\/([\w-]+)/) || s.match(/[?&]id=([\w-]+)/);
+  m = s.match(/\/spreadsheets\/(?:u\/\d+\/)?d\/([\w-]+)/) || s.match(/\/file\/d\/([\w-]+)/) || s.match(/[?&]id=([\w-]+)/);
   if (!m && /^[\w-]{25,}$/.test(s)) m = [s, s];
   if (m) {
     const id = m[1];

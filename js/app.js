@@ -4,12 +4,14 @@ import * as store from './storage.js';
 import { fetchSheet, hashText } from './sheets.js';
 import { computeTree, renderInto, exportSvgString, PanZoom } from './tree.js';
 
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.0.1';
+// Fichier de la famille proposé par défaut au premier lancement
+const DEFAULT_URL = 'https://docs.google.com/spreadsheets/d/1GVpEFBoonQ2M5ZG7dK4_bNW2w1BkZXE9ZupN6cHlXYM/edit';
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const state = {
-  config: { url: '', autoCheck: true, mapping: null, headersSig: '' },
+  config: { url: DEFAULT_URL, autoCheck: true, mapping: null, headersSig: '' },
   data: null,      // { csv, hash, fetchedAt, source, fileName }
   headers: [],
   db: null,
@@ -404,7 +406,7 @@ $('btnClear').onclick = async () => {
   await store.del('config');
   try { localStorage.clear(); } catch { /* ignoré */ }
   Object.assign(state, { data: null, db: null, headers: [], rootId: null, pending: null,
-    config: { url: '', autoCheck: true, mapping: null, headersSig: '' } });
+    config: { url: DEFAULT_URL, autoCheck: true, mapping: null, headersSig: '' } });
   $('updateDot').hidden = true;
   hidePanel();
   $('dlgSettings').close();
