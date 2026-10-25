@@ -4,7 +4,7 @@ import * as store from './storage.js';
 import { fetchSheet, hashText } from './sheets.js';
 import { computeTree, renderInto, exportSvgString, PanZoom } from './tree.js';
 
-const APP_VERSION = '1.0.1';
+const APP_VERSION = '1.0.2';
 // Fichier de la famille proposé par défaut au premier lancement
 const DEFAULT_URL = 'https://docs.google.com/spreadsheets/d/1GVpEFBoonQ2M5ZG7dK4_bNW2w1BkZXE9ZupN6cHlXYM/edit';
 const $ = (id) => document.getElementById(id);

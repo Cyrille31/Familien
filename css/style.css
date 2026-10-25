@@ -145,9 +145,9 @@ button, input, select { font: inherit; color: inherit; }
 
 /* ---------- Fiche personne ---------- */
 .panel {
-  position: fixed; z-index: 30; right: 0; top: 0; bottom: 0; width: min(380px, 100%);
+  position: fixed; z-index: 30; right: 0; top: calc(56px + var(--safe-top)); bottom: 0; width: min(380px, 100%);
   background: var(--surface); box-shadow: var(--shadow); border-left: 1px solid var(--border);
-  padding: calc(16px + var(--safe-top)) 16px calc(16px + var(--safe-bottom));
+  padding: 16px 16px calc(16px + var(--safe-bottom));
   overflow: auto; animation: slideIn .2s ease-out;
 }
 @keyframes slideIn { from { transform: translateX(30px); opacity: 0; } }
@@ -162,7 +162,7 @@ button, input, select { font: inherit; color: inherit; }
 }
 .gen .short { display: none; }
 @media (max-width: 640px) { .gen .short { display: inline; } }
-.panel-close { position: absolute; right: 10px; top: calc(10px + var(--safe-top)); width: 36px; height: 36px; border: 0; border-radius: 50%; background: var(--surface-2); font-size: 22px; cursor: pointer; }
+.panel-close { position: absolute; right: 10px; top: 10px; width: 36px; height: 36px; border: 0; border-radius: 50%; background: var(--surface-2); font-size: 22px; cursor: pointer; }
 .p-head { border-left: 6px solid var(--unknown); padding-left: 12px; margin: 0 40px 14px 0; }
 .p-head.s-m { border-color: var(--male); }
 .p-head.s-f { border-color: var(--female); }
