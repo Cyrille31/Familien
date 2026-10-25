@@ -34,11 +34,29 @@ Tapez le nom d'une personne : Familien affiche son **arbre complet**, avec tous 
 Les colonnes Père / Mère / Conjoint peuvent contenir **l'identifiant** de la personne (recommandé) ou son **nom complet** (« Jean Martin »).
 Voir le fichier [`exemple.csv`](exemple.csv).
 
-3. Partage : **Partager → Accès général → Tous les utilisateurs disposant du lien (Lecteur)**, puis copier le lien et le coller dans les réglages de l'application.
-   Pour un onglet précis, ouvrez cet onglet avant de copier le lien.
+3. Accès au fichier : deux possibilités.
+   - **Fichier privé (recommandé)** : l'application demande de se connecter à son compte Google (lecture seule). Seuls les comptes avec qui le fichier est partagé peuvent le charger. Nécessite un identifiant client Google, voir [Fichier privé : configuration Google](#fichier-privé--configuration-google).
+   - **Fichier public** : *Partager → Accès général → Tous les utilisateurs disposant du lien (Lecteur)*. Toute personne ayant le lien peut alors le lire.
 
 > ⚠️ Le fichier doit être une vraie feuille **Google Sheets**. Pour un fichier Excel simplement déposé sur le Drive : l'ouvrir puis *Fichier → Enregistrer au format Google Sheets*.
-> Toute personne ayant le lien peut lire le fichier : ne le diffusez qu'à la famille.
+
+## Fichier privé : configuration Google
+
+À faire une seule fois (environ 10 minutes, gratuit), avec le compte Google propriétaire du fichier :
+
+1. Ouvrir https://console.cloud.google.com/ et **créer un projet** (par exemple « Familien »).
+2. **Activer l'API** : menu *API et services → Bibliothèque*, chercher **Google Sheets API**, cliquer **Activer**.
+3. **Écran de consentement** : menu *Google Auth Platform* (ou *Écran de consentement OAuth*) → **Commencer** :
+   - nom de l'application : `Familien`, adresse e-mail d'assistance : la vôtre ;
+   - audience : **Externe** ;
+   - dans *Audience → Utilisateurs test*, **ajouter votre adresse Gmail** et celles des membres de la famille qui utiliseront l'application (100 au maximum). Laisser l'application en mode « Test ».
+4. **Créer l'identifiant** : *Clients* (ou *Identifiants*) → **Créer un client** → type **Application Web** :
+   - *Origines JavaScript autorisées* : `https://cyrille31.github.io`
+   - *URI de redirection autorisés* : `https://cyrille31.github.io/Familien/` (avec la barre finale)
+5. Copier l'**ID client** (il se termine par `.apps.googleusercontent.com`) et le coller dans l'application : *Réglages → Fichier privé : connexion Google*. On peut aussi l'inscrire dans `DEFAULT_CLIENT_ID` (`js/app.js`) pour que toute la famille l'ait automatiquement ; cet identifiant n'est pas secret.
+
+Ensuite, « Télécharger depuis le Drive » ou le bouton « Drive » ouvrent la page de connexion Google. Google affiche « Google n'a pas validé cette application » (normal en mode test) : *Continuer*. La connexion dure une heure ; au-delà, elle est redemandée lors de la prochaine vérification.
+Pour qu'un membre de la famille puisse charger le fichier, il faut **partager le fichier avec son adresse Gmail** et **l'ajouter aux utilisateurs test**.
 
 ## Installer l'application
 
@@ -62,8 +80,9 @@ Pour tester sur un ordinateur : `python3 -m http.server` dans le dossier, puis o
 
 Application web progressive (PWA) sans dépendance ni compilation : HTML, CSS et JavaScript (modules ES).
 
-- `js/sheets.js` : téléchargement du fichier (export CSV de Google Sheets) et empreinte SHA-256 pour détecter les changements
+- `js/sheets.js` : téléchargement du fichier (API Google Sheets pour un fichier privé, export CSV pour un fichier public) et empreinte SHA-256 pour détecter les changements
 - `js/model.js` : détection des colonnes, construction des liens familiaux, comparaison de versions
 - `js/tree.js` : mise en page compacte de l'arbre, dessin SVG, zoom/déplacement tactile, export
+- `js/auth.js` : connexion Google (OAuth 2.0 par redirection, jeton en lecture seule)
 - `js/storage.js` : enregistrement local (IndexedDB)
 - `sw.js` : service worker pour le fonctionnement hors ligne (augmenter `VERSION` à chaque modification)

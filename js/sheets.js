@@ -74,6 +74,45 @@ function gvizToCsv(table) {
   return lines.join('\n');
 }
 
+// Lecture d'un fichier privé avec le compte Google connecté (API Google Sheets, lecture seule).
+export async function fetchSheetWithToken(input, token) {
+  const parsed = parseSheetUrl(input);
+  if (!parsed?.id || /^2PACX-/.test(parsed.id)) throw new Error("Adresse non reconnue. Collez le lien de la feuille Google Sheets.");
+  if (!navigator.onLine) throw new Error('Pas de connexion Internet.');
+  const base = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(parsed.id)}`;
+  const call = async (url) => {
+    const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' });
+    if (resp.ok) return resp.json();
+    let msg = '';
+    try { msg = (await resp.json()).error?.message || ''; } catch { /* ignoré */ }
+    const err = new Error(apiErrorMessage(resp.status, msg));
+    if (resp.status === 401) err.code = 'AUTH';
+    throw err;
+  };
+  const meta = await call(`${base}?fields=sheets.properties(sheetId,title)`);
+  const sheets = meta.sheets || [];
+  const sheet = sheets.find((s) => String(s.properties.sheetId) === String(parsed.gid)) || sheets[0];
+  if (!sheet) throw new Error('Le fichier ne contient aucun onglet.');
+  const range = `'${sheet.properties.title.replace(/'/g, "''")}'`;
+  const data = await call(`${base}/values/${encodeURIComponent(range)}?valueRenderOption=FORMATTED_VALUE`);
+  const rows = data.values || [];
+  const width = Math.max(0, ...rows.map((r) => r.length));
+  return rows.map((r) => Array.from({ length: width }, (_, i) => csvCell(r[i] ?? '')).join(',')).join('\n');
+}
+
+function apiErrorMessage(status, msg) {
+  if (status === 401) return 'Connexion Google expirée.';
+  if (/has not been used|is disabled|not enabled/i.test(msg)) {
+    return "L'API Google Sheets n'est pas activée dans le projet Google Cloud (API et services → Bibliothèque → Google Sheets API → Activer).";
+  }
+  if (/not supported for this document/i.test(msg)) {
+    return "Ce fichier est un fichier Excel déposé sur le Drive. Ouvrez-le puis Fichier → Enregistrer au format Google Sheets, et utilisez le lien du nouveau fichier.";
+  }
+  if (status === 403) return "Le compte Google connecté n'a pas accès à ce fichier. Partagez-le avec ce compte (Partager → ajouter son adresse).";
+  if (status === 404) return 'Fichier introuvable : vérifiez son adresse.';
+  return `Erreur Google (${status})${msg ? ' : ' + msg : ''}`;
+}
+
 export async function fetchSheet(input) {
   const parsed = parseSheetUrl(input);
   if (!parsed) throw new Error("Adresse non reconnue. Collez le lien de partage de la feuille Google Sheets.");

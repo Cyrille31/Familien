@@ -151,6 +151,7 @@ export function buildDatabase(rows, mapping) {
       mother: null,
       spouses: [],
     };
+    p.sexRaw = p.sex;
     p.name = [p.firstName, p.lastName].filter(Boolean).join(' ') || '(sans nom)';
     p.birthYear = extractYear(p.birthDate);
     p.deathYear = extractYear(p.deathDate);
@@ -295,7 +296,7 @@ export function buildDatabase(rows, mapping) {
 // Compare deux versions du fichier pour l'alerte de mise à jour.
 export function diffDatabases(oldDb, newDb) {
   const key = (p) => (p.id.startsWith('L') && /^L\d+$/.test(p.id) ? normalize(p.name + ' ' + p.birthDate) : p.id);
-  const sig = (p) => JSON.stringify([p.name, p.sex, p.birthDate, p.birthPlace, p.deathDate, p.deathPlace,
+  const sig = (p) => JSON.stringify([p.name, p.sexRaw, p.birthDate, p.birthPlace, p.deathDate, p.deathPlace,
     p.father, p.mother, p.spouses, p.occupation, p.notes, p.extras]);
   const oldMap = new Map([...oldDb.persons.values()].map((p) => [key(p), sig(p)]));
   const newMap = new Map([...newDb.persons.values()].map((p) => [key(p), sig(p)]));
