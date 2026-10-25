@@ -38,6 +38,8 @@ Voir le fichier [`exemple.csv`](exemple.csv).
    - **Fichier privé (recommandé)** : l'application demande de se connecter à son compte Google (lecture seule). Seuls les comptes avec qui le fichier est partagé peuvent le charger. Nécessite un identifiant client Google, voir [Fichier privé : configuration Google](#fichier-privé--configuration-google).
    - **Fichier public** : *Partager → Accès général → Tous les utilisateurs disposant du lien (Lecteur)*. Toute personne ayant le lien peut alors le lire.
 
+> 💡 Sans connexion Google : ouvrez le fichier dans le navigateur et enregistrez la page (format **.mht**, menu ⋮ → Télécharger dans Chrome Android), ou téléchargez-le en **.csv**, puis *Réglages → Importer un fichier*. Si le fichier importé diffère de votre copie, l'application montre les changements et demande votre accord.
+
 > ⚠️ Le fichier doit être une vraie feuille **Google Sheets**. Pour un fichier Excel simplement déposé sur le Drive : l'ouvrir puis *Fichier → Enregistrer au format Google Sheets*.
 
 ## Fichier privé : configuration Google
@@ -84,5 +86,6 @@ Application web progressive (PWA) sans dépendance ni compilation : HTML, CSS et
 - `js/model.js` : détection des colonnes, construction des liens familiaux, comparaison de versions
 - `js/tree.js` : mise en page compacte de l'arbre, dessin SVG, zoom/déplacement tactile, export
 - `js/auth.js` : connexion Google (OAuth 2.0 par redirection, jeton en lecture seule)
+- `js/importers.js` : import d'un fichier .csv ou d'une page Google Sheets enregistrée (.mht, .html)
 - `js/storage.js` : enregistrement local (IndexedDB)
 - `sw.js` : service worker pour le fonctionnement hors ligne (augmenter `VERSION` à chaque modification)

@@ -3,9 +3,10 @@ import { FIELDS, detectMapping, headersSignature, buildDatabase, diffDatabases }
 import * as store from './storage.js';
 import { fetchSheet, fetchSheetWithToken, hashText } from './sheets.js';
 import * as auth from './auth.js';
+import { fileToCsv } from './importers.js';
 import { computeTree, renderInto, exportSvgString, PanZoom } from './tree.js';
 
-const APP_VERSION = '1.1.2';
+const APP_VERSION = '1.2.0';
 // Fichier de la famille proposé par défaut au premier lancement
 const DEFAULT_URL = 'https://docs.google.com/spreadsheets/d/1GVpEFBoonQ2M5ZG7dK4_bNW2w1BkZXE9ZupN6cHlXYM/edit';
 // Identifiant client Google (OAuth) pour lire le fichier privé avec son compte Google.
@@ -151,6 +152,24 @@ async function downloadFromDrive() {
   }
 }
 
+// Montre ce qui a changé et demande l'accord avant de remplacer la copie locale.
+function offerUpdate(csv, hash, meta) {
+  const prep = prepare(csv);
+  const diff = diffDatabases(state.db, prep.db);
+  state.pending = { csv, hash, meta };
+  if (meta.source === 'drive') $('updateDot').hidden = false;
+  const parts = [];
+  if (diff.added) parts.push(`<b>${diff.added}</b> personne${diff.added > 1 ? 's' : ''} ajoutée${diff.added > 1 ? 's' : ''}`);
+  if (diff.modified) parts.push(`<b>${diff.modified}</b> modifiée${diff.modified > 1 ? 's' : ''}`);
+  if (diff.removed) parts.push(`<b>${diff.removed}</b> supprimée${diff.removed > 1 ? 's' : ''}`);
+  const fromDrive = meta.source === 'drive';
+  $('updateTitle').textContent = fromDrive ? 'Le fichier a changé sur le Drive' : 'Ce fichier est différent de votre copie';
+  $('updateText').innerHTML =
+    `${parts.length ? parts.join(', ') + '.' : 'Le contenu du fichier a été modifié.'}<br>` +
+    `<span class="muted">Votre copie date du ${esc(formatDate(state.data.fetchedAt))}. Voulez-vous la remplacer par ${fromDrive ? 'la version du Drive' : 'ce fichier'} ?</span>`;
+  $('dlgUpdate').showModal();
+}
+
 async function checkForUpdate({ silent = false } = {}) {
   if (!state.config.url) {
     if (!silent) { openSettings(); toast("Indiquez d'abord l'adresse du fichier sur le Drive."); }
@@ -173,18 +192,7 @@ async function checkForUpdate({ silent = false } = {}) {
       if (!silent) toast('Le fichier n’a pas changé : votre copie est à jour ✓');
       return;
     }
-    const prep = prepare(csv);
-    const diff = diffDatabases(state.db, prep.db);
-    state.pending = { csv, hash };
-    $('updateDot').hidden = false;
-    const parts = [];
-    if (diff.added) parts.push(`<b>${diff.added}</b> personne${diff.added > 1 ? 's' : ''} ajoutée${diff.added > 1 ? 's' : ''}`);
-    if (diff.modified) parts.push(`<b>${diff.modified}</b> modifiée${diff.modified > 1 ? 's' : ''}`);
-    if (diff.removed) parts.push(`<b>${diff.removed}</b> supprimée${diff.removed > 1 ? 's' : ''}`);
-    $('updateText').innerHTML =
-      `${parts.length ? parts.join(', ') + '.' : 'Le contenu du fichier a été modifié.'}<br>` +
-      `<span class="muted">Votre copie date du ${esc(formatDate(state.data.fetchedAt))}. Voulez-vous la remplacer par la version du Drive ?</span>`;
-    $('dlgUpdate').showModal();
+    offerUpdate(csv, hash, { source: 'drive' });
   } catch (e) {
     if (!silent && !(e instanceof Redirecting)) toast(e.message, { duration: 9000 });
   } finally {
@@ -427,14 +435,15 @@ $('btnCheck').onclick = () => (state.pending ? $('dlgUpdate').showModal() : chec
 $('btnAccept').onclick = async () => {
   $('dlgUpdate').close();
   if (!state.pending) return;
-  const { csv, hash } = state.pending;
+  const { csv, hash, meta } = state.pending;
   try {
-    await applyDataset(csv, { source: 'drive', hash });
+    await applyDataset(csv, { ...meta, hash });
     toast(`Mise à jour effectuée : ${state.db.persons.size} personnes ✓`);
   } catch (e) { toast(e.message, { duration: 8000 }); }
 };
 $('btnRefuse').onclick = () => {
   $('dlgUpdate').close();
+  if (state.pending?.meta.source !== 'drive') { state.pending = null; toast('Vous gardez votre version.'); return; }
   toast('Vous gardez votre version. Le point orange rappelle qu’une mise à jour est disponible.', { duration: 5000 });
 };
 
@@ -443,9 +452,19 @@ $('fileInput').onchange = async (e) => {
   e.target.value = '';
   if (!file) return;
   try {
-    const csv = await file.text();
-    const prep = await applyDataset(csv, { source: 'file', fileName: file.name });
-    toast(`${prep.db.persons.size} personnes importées ✓`);
+    const csv = await fileToCsv(file);
+    const meta = { source: 'file', fileName: file.name };
+    if (state.data && state.db) {
+      const hash = await hashText(csv);
+      if (hash === state.data.hash) { toast('Ce fichier est identique à votre copie ✓'); return; }
+      prepare(csv); // vérifie que le fichier est lisible avant de proposer
+      $('dlgSettings').close();
+      offerUpdate(csv, hash, meta);
+      return;
+    }
+    const prep = await applyDataset(csv, meta);
+    $('dlgSettings').close();
+    toast(`${prep.db.persons.size} personnes importées ✓ Tapez un nom pour voir son arbre.`, { duration: 6000 });
   } catch (err) { toast(err.message, { duration: 8000 }); }
 };
 
