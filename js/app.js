@@ -1,17 +1,21 @@
 import { parseCSV } from './csv.js';
 import { FIELDS, detectMapping, headersSignature, buildDatabase, diffDatabases } from './model.js';
 import * as store from './storage.js';
-import { fetchSheet, hashText } from './sheets.js';
+import { fetchSheet, fetchSheetWithToken, hashText } from './sheets.js';
+import * as auth from './auth.js';
 import { computeTree, renderInto, exportSvgString, PanZoom } from './tree.js';
 
-const APP_VERSION = '1.0.2';
+const APP_VERSION = '1.1.0';
 // Fichier de la famille proposé par défaut au premier lancement
 const DEFAULT_URL = 'https://docs.google.com/spreadsheets/d/1GVpEFBoonQ2M5ZG7dK4_bNW2w1BkZXE9ZupN6cHlXYM/edit';
+// Identifiant client Google (OAuth) pour lire le fichier privé avec son compte Google.
+// Il n'est pas secret ; il peut aussi être saisi dans les réglages.
+const DEFAULT_CLIENT_ID = '';
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const state = {
-  config: { url: DEFAULT_URL, autoCheck: true, mapping: null, headersSig: '' },
+  config: { url: DEFAULT_URL, clientId: DEFAULT_CLIENT_ID, autoCheck: true, mapping: null, headersSig: '' },
   data: null,      // { csv, hash, fetchedAt, source, fileName }
   headers: [],
   db: null,
@@ -100,14 +104,37 @@ function refreshAll() {
 
 // ---------- Drive ----------
 
+class Redirecting extends Error {}
+
+// Lit le fichier : avec le compte Google si un identifiant client est configuré
+// (fichier privé), sinon comme fichier public. `interactive` autorise la
+// redirection vers la page de connexion Google.
+async function driveFetch(url, interactive) {
+  const clientId = state.config.clientId;
+  if (!clientId) return fetchSheet(url);
+  const token = auth.getToken();
+  if (token) {
+    try {
+      return await fetchSheetWithToken(url, token.token);
+    } catch (e) {
+      if (e.code !== 'AUTH') throw e;
+      auth.clearToken();
+    }
+  }
+  if (!interactive) throw new Redirecting();
+  await saveConfig();
+  auth.signIn(clientId, 'check');
+  throw new Redirecting();
+}
+
 async function downloadFromDrive() {
   const url = $('sheetUrl').value.trim();
   if (!url) { toast("Collez d'abord l'adresse du fichier."); $('sheetUrl').focus(); return; }
   const btn = $('btnDownload');
   busy(btn, true);
   try {
-    const csv = await fetchSheet(url);
     state.config.url = url;
+    const csv = await driveFetch(url, true);
     const hash = await hashText(csv);
     if (state.data && state.data.hash === hash) {
       await saveConfig();
@@ -118,7 +145,7 @@ async function downloadFromDrive() {
     toast(`${prep.db.persons.size} personnes chargées ✓`);
     $('mappingSection').hidden = false;
   } catch (e) {
-    toast(e.message, { duration: 9000 });
+    if (!(e instanceof Redirecting)) toast(e.message, { duration: 9000 });
   } finally {
     busy(btn, false);
   }
@@ -133,7 +160,7 @@ async function checkForUpdate({ silent = false } = {}) {
   const btn = $('btnCheck');
   busy(btn, true);
   try {
-    const csv = await fetchSheet(state.config.url);
+    const csv = await driveFetch(state.config.url, !silent);
     const hash = await hashText(csv);
     state.config.lastCheck = Date.now();
     await saveConfig();
@@ -159,7 +186,7 @@ async function checkForUpdate({ silent = false } = {}) {
       `<span class="muted">Votre copie date du ${esc(formatDate(state.data.fetchedAt))}. Voulez-vous la remplacer par la version du Drive ?</span>`;
     $('dlgUpdate').showModal();
   } catch (e) {
-    if (!silent) toast(e.message, { duration: 9000 });
+    if (!silent && !(e instanceof Redirecting)) toast(e.message, { duration: 9000 });
   } finally {
     busy(btn, false);
   }
@@ -323,9 +350,26 @@ search.addEventListener('blur', () => setTimeout(() => { results.hidden = true; 
 function openSettings() {
   $('sheetUrl').value = state.config.url || '';
   $('autoCheck').checked = !!state.config.autoCheck;
+  $('clientId').value = state.config.clientId || '';
+  $('redirectUri').textContent = auth.redirectUri();
+  renderAuthInfo();
   renderSourceInfo();
   renderMapping();
   $('dlgSettings').showModal();
+}
+
+function renderAuthInfo() {
+  const box = $('authInfo');
+  if (!state.config.clientId) {
+    box.innerHTML = '<span class="muted">Non configuré : seuls les fichiers publics peuvent être lus.</span>';
+    return;
+  }
+  const t = auth.getToken();
+  box.innerHTML = t
+    ? `Connecté à Google jusqu'à ${esc(new Date(t.exp).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }))}. <button id="btnSignOut" class="btn ghost">Se déconnecter</button>`
+    : '<span class="muted">La connexion sera demandée au prochain téléchargement depuis le Drive.</span>';
+  const out = $('btnSignOut');
+  if (out) out.onclick = () => { auth.clearToken(); renderAuthInfo(); toast('Déconnecté de Google.'); };
 }
 
 function renderSourceInfo() {
@@ -363,6 +407,12 @@ $('btnSettings').onclick = openSettings;
 $('btnStart').onclick = openSettings;
 $('btnDownload').onclick = downloadFromDrive;
 $('sheetUrl').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); downloadFromDrive(); } });
+$('clientId').onchange = async (e) => {
+  state.config.clientId = e.target.value.trim();
+  auth.clearToken();
+  await saveConfig();
+  renderAuthInfo();
+};
 $('autoCheck').onchange = async (e) => { state.config.autoCheck = e.target.checked; await saveConfig(); };
 $('btnCheck').onclick = () => (state.pending ? $('dlgUpdate').showModal() : checkForUpdate());
 
@@ -406,7 +456,7 @@ $('btnClear').onclick = async () => {
   await store.del('config');
   try { localStorage.clear(); } catch { /* ignoré */ }
   Object.assign(state, { data: null, db: null, headers: [], rootId: null, pending: null,
-    config: { url: DEFAULT_URL, autoCheck: true, mapping: null, headersSig: '' } });
+    config: { url: DEFAULT_URL, clientId: DEFAULT_CLIENT_ID, autoCheck: true, mapping: null, headersSig: '' } });
   $('updateDot').hidden = true;
   hidePanel();
   $('dlgSettings').close();
@@ -505,6 +555,7 @@ document.addEventListener('keydown', (e) => {
 // ---------- Démarrage ----------
 
 async function init() {
+  const authResult = auth.handleRedirect();
   $('appVersion').textContent = `Familien ${APP_VERSION}`;
   state.ancDepth = prefs.get('anc', 99);
   state.descDepth = prefs.get('desc', 99);
@@ -513,6 +564,7 @@ async function init() {
 
   const config = await store.get('config');
   if (config) Object.assign(state.config, config);
+  if (!state.config.clientId) state.config.clientId = DEFAULT_CLIENT_ID;
   const data = await store.get('data');
   if (data?.csv) {
     try {
@@ -530,7 +582,11 @@ async function init() {
     history.replaceState({ id: start }, '', '#p=' + encodeURIComponent(start));
   }
   renderTree(true);
-  if (!state.db) setTimeout(openSettings, 400);
+  if (authResult?.error) {
+    toast(authResult.error === 'access_denied' ? 'Connexion Google annulée.' : `Échec de la connexion Google (${authResult.error}).`, { duration: 6000 });
+  }
+  if (authResult?.action) checkForUpdate();
+  else if (!state.db) setTimeout(openSettings, 400);
   else if (state.config.url && state.config.autoCheck && navigator.onLine) checkForUpdate({ silent: true });
 }
 

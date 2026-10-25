@@ -235,3 +235,4 @@ button, input, select { font: inherit; color: inherit; }
   padding: 12px 16px; border-radius: 14px; background: #1d2b27; color: #fff; box-shadow: var(--shadow); font-size: 15px;
 }
 .toast button { border: 0; background: var(--accent); color: #1d2b27; font-weight: 700; padding: 6px 12px; border-radius: 10px; cursor: pointer; }
+.hint code { font-size: 12px; background: var(--surface-2); padding: 2px 6px; border-radius: 6px; overflow-wrap: anywhere; user-select: all; -webkit-user-select: all; }

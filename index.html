@@ -98,6 +98,17 @@
       </section>
 
       <section>
+        <h3>Fichier privé : connexion Google</h3>
+        <p class="hint">Pour un fichier non public, l'application vous demande de vous connecter à votre compte Google (lecture seule). Seuls les comptes ayant accès au fichier peuvent le charger.</p>
+        <label class="field">
+          <span>Identifiant client Google (OAuth)</span>
+          <input id="clientId" type="text" placeholder="…apps.googleusercontent.com" autocomplete="off" autocapitalize="off" spellcheck="false">
+        </label>
+        <p class="hint small">Adresse de retour à déclarer dans Google Cloud : <code id="redirectUri"></code></p>
+        <div id="authInfo" class="info-box"></div>
+      </section>
+
+      <section>
         <h3>Mises à jour</h3>
         <label class="check">
           <input id="autoCheck" type="checkbox">
