@@ -4,18 +4,27 @@ export const FIELDS = [
   { key: 'id', label: 'Identifiant' },
   { key: 'firstName', label: 'Prénom(s)' },
   { key: 'lastName', label: 'Nom' },
+  { key: 'maidenName', label: 'Nom de naissance' },
   { key: 'fullName', label: 'Nom complet' },
   { key: 'sex', label: 'Sexe' },
   { key: 'birthDate', label: 'Date de naissance' },
+  { key: 'birthDM', label: 'Naissance : jour et mois (JJMM)' },
+  { key: 'birthY', label: 'Naissance : année' },
   { key: 'birthPlace', label: 'Lieu de naissance' },
   { key: 'deathDate', label: 'Date de décès' },
+  { key: 'deathDM', label: 'Décès : jour et mois (JJMM)' },
+  { key: 'deathY', label: 'Décès : année' },
   { key: 'deathPlace', label: 'Lieu de décès' },
   { key: 'father', label: 'Père' },
   { key: 'mother', label: 'Mère' },
   { key: 'parents', label: 'Parents (les deux)' },
   { key: 'spouse', label: 'Conjoint(s)' },
+  { key: 'spouse2', label: 'Conjoint 2' },
+  { key: 'spouse3', label: 'Conjoint 3' },
   { key: 'children', label: 'Enfants' },
   { key: 'marriageDate', label: 'Date de mariage' },
+  { key: 'marriageDM', label: 'Mariage : jour et mois (JJMM)' },
+  { key: 'marriageY', label: 'Mariage : année' },
   { key: 'marriagePlace', label: 'Lieu de mariage' },
   { key: 'occupation', label: 'Profession' },
   { key: 'notes', label: 'Notes' },
@@ -37,13 +46,16 @@ function detectField(header) {
   if (!h) return null;
   const has = (re) => re.test(h);
   if (has(/^(id|ident|identifiant|num|numero|no|n|ref|reference|code|cle|key|uid|sosa)$/) ||
-      has(/^(id|num|numero|ref)(personne|individu|person|individual)$/)) return 'id';
+      has(/^(id|num|numero|ref)(personne|individu|person|individual)$/) ||
+      has(/^(n|no|num|numero|id)?fiche$/)) return 'id';
   if (has(/^(sexe|sex|genre|gender|s|hf|fh|mf|hommefemme|masculinfeminin)$/)) return 'sex';
   if (has(/^(id|nom|ref|num|numero|no|n)?(du|de|of)?(pere|father|papa)(id|nom|ref|num|numero|no)?$/)) return 'father';
   if (has(/^(id|nom|ref|num|numero|no|n)?(de|la|dela|of)?(mere|mother|maman)(id|nom|ref|num|numero|no)?$/)) return 'mother';
   if (has(/^(les)?(id|ids|nom|noms)?(des)?parents?(id|ids|nom|noms)?$/)) return 'parents';
-  if (has(/conjoint|epoux|epouse|spouse|^mari$|^mari(e|id|nom)|^(nom|id)?(du|de)?mari$|husband|wife|partenaire|partner|compagn|^femme$/)) return 'spouse';
+  if (has(/conjoint|epou|spouse|^mari$|^mari(e|id|nom)|^(nom|id)?(du|de)?mari$|husband|wife|partenaire|partner|compagn|^femme$/)) return 'spouse';
   if (has(/^(id|ids|nom|noms)?(des)?(enfants?|children|child|kids)(id|ids|nom|noms)?$/)) return 'children';
+
+  if (has(/^nom(de)?(naissance|jeunefille|jf)$|^nomnais|maiden|birthname/)) return 'maidenName';
 
   const place = has(/lieu|ville|commune|place|endroit|paroisse|localite|pays|departement/);
   const birth = has(/naiss|birth|^nee?$|^nee?(le|a)$|bapteme|bapt/);
@@ -52,6 +64,15 @@ function detectField(header) {
   if (place && birth) return 'birthPlace';
   if (place && death) return 'deathPlace';
   if (place && marr) return 'marriagePlace';
+  // Dates en deux colonnes : jour/mois (JJMM) et année (AAAA)
+  const dm = has(/jjmm|jourmois|jour|ddmm/);
+  const yr = has(/aaaa|annee|year|yyyy/);
+  if (birth && dm) return 'birthDM';
+  if (birth && yr) return 'birthY';
+  if (death && dm) return 'deathDM';
+  if (death && yr) return 'deathY';
+  if (marr && dm) return 'marriageDM';
+  if (marr && yr) return 'marriageY';
   if (birth) return 'birthDate';
   if (death) return 'deathDate';
   if (marr) return 'marriageDate';
@@ -67,10 +88,35 @@ function detectField(header) {
 export function detectMapping(headers) {
   const mapping = {};
   headers.forEach((h, i) => {
-    const key = detectField(h);
+    let key = detectField(h);
+    if (key === 'spouse' && 'spouse' in mapping) key = 'spouse2' in mapping ? 'spouse3' : 'spouse2';
     if (key && !(key in mapping)) mapping[key] = i;
   });
   return mapping;
+}
+
+// Trouve la ligne des titres (le fichier peut commencer par un titre ou une date).
+export function findHeaderRow(rows) {
+  let best = 0, bestScore = -1;
+  rows.slice(0, 15).forEach((row, i) => {
+    const score = new Set(row.map(detectField).filter(Boolean)).size;
+    if (score > bestScore) { best = i; bestScore = score; }
+  });
+  return best;
+}
+
+// « 2210 » + « 2021 » → « 22/10/2021 » ; « 101 » (1er janvier) = jour inconnu.
+function composeDate(dm, y) {
+  if (!y || !/^\d+$/.test(y)) return { date: y || '', unknown: false };
+  if (Number(y) < 100) return { date: '', unknown: true };
+  const d = String(dm || '').replace(/[,.].*$/, '').replace(/\D/g, '');
+  if (d.length >= 3 && d !== '101' && d !== '0101') {
+    const day = Number(d.slice(0, -2)), month = Number(d.slice(-2));
+    if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
+      return { date: `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${y}`, unknown: false };
+    }
+  }
+  return { date: y, unknown: false };
 }
 
 export function headersSignature(headers) {
@@ -96,16 +142,61 @@ function splitRefs(v) {
   return s.split(/\s*[;|\n/]+\s*|\s+et\s+|\s*&\s*|\s+and\s+/i).map((x) => x.trim()).filter(Boolean);
 }
 
+// Certains fichiers ont un bloc de fiches numérotées à partir de 2001 dont les
+// références (père, mère, conjoints) omettent le « 2000 ». On choisit, pour chaque
+// bloc, le décalage qui donne des écarts d'âge parents/enfants cohérents.
+function computeSectionOffsets(persons) {
+  const bySection = new Map();
+  for (const p of persons.values()) {
+    if (!bySection.has(p.section)) bySection.set(p.section, []);
+    bySection.get(p.section).push(p);
+  }
+  const offsets = new Map();
+  for (const [section, list] of bySection) {
+    const nums = list.map((p) => Number(p.id)).filter(Number.isFinite);
+    if (nums.length < 5) continue;
+    const maxOffset = Math.floor(Math.min(...nums) / 1000) * 1000;
+    if (!maxOffset) continue;
+    const score = (off) => {
+      let sc = 0;
+      for (const p of list) {
+        const cy = Number(p.birthYear);
+        for (const r of [p.refs.father, p.refs.mother]) {
+          if (!/^\d+$/.test(r)) continue;
+          const parent = persons.get(String(Number(r) + off));
+          const py = parent && Number(parent.birthYear);
+          if (cy && py) sc += cy - py >= 12 && cy - py <= 70 ? 1 : -1;
+        }
+      }
+      return sc;
+    };
+    let best = 0, bestScore = score(0);
+    for (let off = 1000; off <= maxOffset; off += 1000) {
+      const sc = score(off);
+      if (sc > bestScore + Math.max(3, list.length * 0.05)) { best = off; bestScore = sc; }
+    }
+    if (best) offsets.set(section, { offset: best, from: Math.min(...nums), to: Math.max(...nums) });
+  }
+  return offsets;
+}
+
 // rows : tableau de lignes (la première = en-têtes). mapping : { champ: indexColonne }
 export function buildDatabase(rows, mapping) {
   const headers = rows[0] || [];
   const body = rows.slice(1);
-  const col = (row, key) => (key in mapping && mapping[key] !== null && mapping[key] !== '' ? (row[mapping[key]] ?? '').trim() : '');
+  const col = (row, key) => {
+    if (!(key in mapping) || mapping[key] === null || mapping[key] === '') return '';
+    const v = (row[mapping[key]] ?? '').trim();
+    return v === '0' ? '' : v; // « 0 » signifie « vide » dans beaucoup de fichiers
+  };
   const mappedCols = new Set(Object.values(mapping).map(Number));
 
   const persons = new Map();
   const order = [];
+  let section = 0, prevNum = null;
   body.forEach((row, idx) => {
+    // Ignore les lignes modèles vides (sans aucun nom)
+    if (!col(row, 'firstName') && !col(row, 'lastName') && !col(row, 'fullName')) return;
     let id = col(row, 'id') || `L${idx + 2}`;
     id = id.replace(/\.0+$/, '');
     if (persons.has(id)) {
@@ -122,20 +213,28 @@ export function buildDatabase(rows, mapping) {
     }
     const extras = [];
     headers.forEach((h, i) => {
-      if (!mappedCols.has(i) && (row[i] || '').trim()) extras.push([h || `Colonne ${i + 1}`, row[i].trim()]);
+      if (!mappedCols.has(i) && (row[i] || '').trim() && row[i].trim() !== '0') extras.push([h || `Colonne ${i + 1}`, row[i].trim()]);
     });
+    const birth = composeDate(col(row, 'birthDM'), col(row, 'birthY'));
+    const death = composeDate(col(row, 'deathDM'), col(row, 'deathY'));
+    const marriage = composeDate(col(row, 'marriageDM'), col(row, 'marriageY'));
+    let maidenName = col(row, 'maidenName');
+    // « (Buret) » = nom de naissance inconnu ; « X » = inconnu
+    if (/^\(.*\)$/.test(maidenName) || /^x$/i.test(maidenName) || normalize(maidenName) === normalize(lastName)) maidenName = '';
     const p = {
       id,
+      maidenName,
+      deceased: death.unknown || !!(col(row, 'deathDate') || death.date),
       row: idx + 2,
       firstName,
       lastName,
       fullName,
       sex: parseSex(col(row, 'sex')),
-      birthDate: col(row, 'birthDate'),
+      birthDate: col(row, 'birthDate') || birth.date,
       birthPlace: col(row, 'birthPlace'),
-      deathDate: col(row, 'deathDate'),
+      deathDate: col(row, 'deathDate') || death.date || (death.unknown ? 'date inconnue' : ''),
       deathPlace: col(row, 'deathPlace'),
-      marriageDate: col(row, 'marriageDate'),
+      marriageDate: col(row, 'marriageDate') || marriage.date,
       marriagePlace: col(row, 'marriagePlace'),
       occupation: col(row, 'occupation'),
       notes: col(row, 'notes'),
@@ -143,7 +242,7 @@ export function buildDatabase(rows, mapping) {
         father: col(row, 'father'),
         mother: col(row, 'mother'),
         parents: col(row, 'parents'),
-        spouse: col(row, 'spouse'),
+        spouse: [col(row, 'spouse'), col(row, 'spouse2'), col(row, 'spouse3')].filter(Boolean).join(';'),
         children: col(row, 'children'),
       },
       extras,
@@ -155,7 +254,12 @@ export function buildDatabase(rows, mapping) {
     p.name = [p.firstName, p.lastName].filter(Boolean).join(' ') || '(sans nom)';
     p.birthYear = extractYear(p.birthDate);
     p.deathYear = extractYear(p.deathDate);
-    p.search = normalize(`${p.firstName} ${p.lastName} ${p.fullName} ${p.id}`);
+    p.search = normalize(`${p.firstName} ${p.lastName} ${p.maidenName} ${p.fullName} ${p.id}`);
+    // Sections : blocs de numéros de fiche qui se suivent
+    const num = /^\d+$/.test(id) ? Number(id) : null;
+    if (num !== null && prevNum !== null && Math.abs(num - prevNum) > 50) section++;
+    if (num !== null) prevNum = num;
+    p.section = section;
     persons.set(id, p);
     order.push(id);
   });
@@ -174,10 +278,14 @@ export function buildDatabase(rows, mapping) {
     if (p.fullName) addName(p.fullName, p.id);
   }
 
+  const offsets = computeSectionOffsets(persons);
+  const offsetOf = (p) => offsets.get(p.section)?.offset || 0;
+
   let unresolved = 0;
-  const resolve = (ref) => {
+  const resolve = (ref, off = 0) => {
     let r = String(ref || '').trim();
     if (!r) return null;
+    if (off && /^\d+$/.test(r) && persons.has(String(Number(r) + off))) return String(Number(r) + off);
     if (persons.has(r)) return r;
     const noDec = r.replace(/\.0+$/, '');
     if (persons.has(noDec)) return noDec;
@@ -196,13 +304,13 @@ export function buildDatabase(rows, mapping) {
     unresolved++;
     return null;
   };
-  const resolveList = (v) => {
+  const resolveList = (v, off = 0) => {
     const parts = splitRefs(v);
-    let ids = parts.map(resolve);
+    let ids = parts.map((x) => resolve(x, off));
     // Repli : liste séparée par des virgules
     if (parts.length === 1 && !ids[0] && v.includes(',')) {
       unresolved--;
-      ids = v.split(',').map((x) => resolve(x.trim()));
+      ids = v.split(',').map((x) => resolve(x.trim(), off));
     }
     return ids.filter(Boolean);
   };
@@ -227,15 +335,16 @@ export function buildDatabase(rows, mapping) {
   };
 
   for (const p of persons.values()) {
-    const f = resolve(p.refs.father);
-    const m = resolve(p.refs.mother);
+    const f = resolve(p.refs.father, offsetOf(p));
+    const m = resolve(p.refs.mother, offsetOf(p));
     if (f && f !== p.id) p.father = f;
-    if (m && m !== p.id) p.mother = m;
+    if (m && m !== p.id && m !== p.father) p.mother = m;
   }
   for (const p of persons.values()) {
-    if (p.refs.parents) resolveList(p.refs.parents).forEach((pid) => setParent(p, pid));
-    if (p.refs.children) resolveList(p.refs.children).forEach((cid) => setParent(persons.get(cid), p.id));
-    if (p.refs.spouse) resolveList(p.refs.spouse).forEach((sid) => addSpouse(p.id, sid));
+    const off = offsetOf(p);
+    if (p.refs.parents) resolveList(p.refs.parents, off).forEach((pid) => setParent(p, pid));
+    if (p.refs.children) resolveList(p.refs.children, off).forEach((cid) => setParent(persons.get(cid), p.id));
+    if (p.refs.spouse) resolveList(p.refs.spouse, off).forEach((sid) => addSpouse(p.id, sid));
   }
   // Déduit le sexe des parents si absent
   for (const p of persons.values()) {
@@ -268,6 +377,7 @@ export function buildDatabase(rows, mapping) {
     persons,
     order,
     unresolved,
+    offsets: [...offsets.values()],
     get: (id) => persons.get(id),
     childrenOf: (id) => children.get(id) || [],
     spousesOf: (id) => persons.get(id)?.spouses || [],

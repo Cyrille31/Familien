@@ -1,12 +1,12 @@
 import { parseCSV } from './csv.js';
-import { FIELDS, detectMapping, headersSignature, buildDatabase, diffDatabases } from './model.js';
+import { FIELDS, detectMapping, findHeaderRow, headersSignature, buildDatabase, diffDatabases } from './model.js';
 import * as store from './storage.js';
 import { fetchSheet, fetchSheetWithToken, hashText } from './sheets.js';
 import * as auth from './auth.js';
 import { fileToCsv } from './importers.js';
 import { computeTree, renderInto, exportSvgString, PanZoom } from './tree.js';
 
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.3.0';
 // Fichier de la famille proposé par défaut au premier lancement
 const DEFAULT_URL = 'https://docs.google.com/spreadsheets/d/1GVpEFBoonQ2M5ZG7dK4_bNW2w1BkZXE9ZupN6cHlXYM/edit';
 // Identifiant client Google (OAuth) pour lire le fichier privé avec son compte Google.
@@ -61,13 +61,15 @@ function formatDate(ts) {
 
 const years = (p) => {
   const b = p.birthYear, d = p.deathYear;
-  return b || d ? `${b || '?'}${d ? '–' + d : ''}` : '';
+  if (!b && !d) return p.deceased ? '†' : '';
+  return `${b || '?'}${d ? '–' + d : p.deceased ? ' †' : ''}`;
 };
 
 // ---------- Données ----------
 
 function prepare(csv, config = state.config) {
-  const rows = parseCSV(csv);
+  const all = parseCSV(csv);
+  const rows = all.slice(findHeaderRow(all));
   if (rows.length < 2) throw new Error('Le fichier est vide ou ne contient que des en-têtes.');
   const headers = rows[0].map((h) => h.trim());
   const sig = headersSignature(headers);
@@ -283,10 +285,11 @@ function showPerson(id) {
   $('panelBody').innerHTML = `
     <div class="p-head s-${p.sex === 'M' ? 'm' : p.sex === 'F' ? 'f' : 'u'}">
       <h3>${esc(p.name)}</h3>
-      <p class="muted">${esc([sexLabel, years(p)].filter(Boolean).join(' · '))}</p>
+      <p class="muted">${esc([sexLabel, p.maidenName ? (p.sex === 'F' ? 'née ' : 'né ') + p.maidenName : '', years(p)].filter(Boolean).join(' · '))}</p>
     </div>
     ${id !== state.rootId ? `<button class="btn primary block" data-root="${esc(id)}">Afficher son arbre</button>` : ''}
     <dl class="facts">
+      ${fact('Nom de naissance', p.maidenName)}
       ${fact('Naissance', p.birthDate, p.birthPlace)}
       ${fact('Décès', p.deathDate, p.deathPlace)}
       ${fact('Mariage', p.marriageDate, p.marriagePlace)}
@@ -386,6 +389,7 @@ function renderSourceInfo() {
   const src = { drive: 'Google Drive', file: `fichier importé${state.data.fileName ? ' « ' + state.data.fileName + ' »' : ''}`, demo: 'exemple' }[state.data.source] || '';
   box.innerHTML = `<b>${state.db.persons.size}</b> personnes enregistrées sur cet appareil<br>
     <span class="muted">Source : ${esc(src)} · copie du ${esc(formatDate(state.data.fetchedAt))}</span>
+    ${state.db.offsets.map((o) => `<br><span class="muted">Fiches n° ${o.from} à ${o.to} : numéros de parents et conjoints décalés de ${o.offset} (détecté automatiquement).</span>`).join('')}
     ${state.db.unresolved ? `<br><span class="warn">${state.db.unresolved} lien(s) familial(aux) non retrouvé(s) dans le fichier.</span>` : ''}`;
   box.hidden = false;
 }
