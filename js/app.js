@@ -5,7 +5,7 @@ import { fetchSheet, fetchSheetWithToken, hashText } from './sheets.js';
 import * as auth from './auth.js';
 import { computeTree, renderInto, exportSvgString, PanZoom } from './tree.js';
 
-const APP_VERSION = '1.1.1';
+const APP_VERSION = '1.1.2';
 // Fichier de la famille proposé par défaut au premier lancement
 const DEFAULT_URL = 'https://docs.google.com/spreadsheets/d/1GVpEFBoonQ2M5ZG7dK4_bNW2w1BkZXE9ZupN6cHlXYM/edit';
 // Identifiant client Google (OAuth) pour lire le fichier privé avec son compte Google.
@@ -407,8 +407,16 @@ $('btnSettings').onclick = openSettings;
 $('btnStart').onclick = openSettings;
 $('btnDownload').onclick = downloadFromDrive;
 $('sheetUrl').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); downloadFromDrive(); } });
+const isClientId = (v) => /^[\w-]+\.apps\.googleusercontent\.com$/.test(v);
+
 $('clientId').onchange = async (e) => {
-  state.config.clientId = e.target.value.trim();
+  const v = e.target.value.trim();
+  if (v && !isClientId(v)) {
+    toast("Ce n'est pas un identifiant client : il se termine par « .apps.googleusercontent.com » et se crée dans la console Google Cloud (voir le guide). Ce n'est pas votre adresse Gmail.", { duration: 10000 });
+    e.target.value = state.config.clientId || '';
+    return;
+  }
+  state.config.clientId = v;
   auth.clearToken();
   await saveConfig();
   renderAuthInfo();
@@ -564,7 +572,7 @@ async function init() {
 
   const config = await store.get('config');
   if (config) Object.assign(state.config, config);
-  if (!state.config.clientId) state.config.clientId = DEFAULT_CLIENT_ID;
+  if (!isClientId(state.config.clientId || '')) state.config.clientId = DEFAULT_CLIENT_ID;
   const data = await store.get('data');
   if (data?.csv) {
     try {
