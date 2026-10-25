@@ -91,7 +91,7 @@
         <p class="hint">Dans Google Sheets : <b>Partager</b> → « Accès général » → <b>Tous les utilisateurs disposant du lien</b> (Lecteur), puis copiez le lien.
           Pour utiliser un autre onglet, ouvrez-le avant de copier le lien.</p>
         <div class="alt-row">
-          <label class="btn ghost file-btn">Importer un fichier CSV<input id="fileInput" type="file" accept=".csv,.tsv,.txt,text/csv"></label>
+          <label class="btn ghost file-btn">Importer un fichier (.csv, .mht)<input id="fileInput" type="file"></label>
           <button id="btnDemo" class="btn ghost">Essayer avec un exemple</button>
         </div>
         <div id="sourceInfo" class="info-box" hidden></div>
@@ -145,7 +145,7 @@
   <dialog id="dlgUpdate" class="dialog narrow">
     <div class="dlg-body">
       <div class="update-ico">🔔</div>
-      <h2>Le fichier a changé sur le Drive</h2>
+      <h2 id="updateTitle">Le fichier a changé sur le Drive</h2>
       <p id="updateText"></p>
       <div class="actions">
         <button id="btnRefuse" class="btn ghost">Garder ma version</button>
