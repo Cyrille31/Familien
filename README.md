@@ -42,7 +42,7 @@ Voir le fichier [`exemple.csv`](exemple.csv).
 
 ## Fichier privé : configuration Google
 
-À faire une seule fois (environ 10 minutes, gratuit), avec le compte Google propriétaire du fichier :
+À faire une seule fois (environ 10 minutes, gratuit), avec **n'importe quel compte Google** (le vôtre). Cela ne touche pas au fichier : il n'est pas nécessaire d'en être propriétaire, il suffit de pouvoir le lire.
 
 1. Ouvrir https://console.cloud.google.com/ et **créer un projet** (par exemple « Familien »).
 2. **Activer l'API** : menu *API et services → Bibliothèque*, chercher **Google Sheets API**, cliquer **Activer**.
@@ -56,7 +56,7 @@ Voir le fichier [`exemple.csv`](exemple.csv).
 5. Copier l'**ID client** (il se termine par `.apps.googleusercontent.com`) et le coller dans l'application : *Réglages → Fichier privé : connexion Google*. On peut aussi l'inscrire dans `DEFAULT_CLIENT_ID` (`js/app.js`) pour que toute la famille l'ait automatiquement ; cet identifiant n'est pas secret.
 
 Ensuite, « Télécharger depuis le Drive » ou le bouton « Drive » ouvrent la page de connexion Google. Google affiche « Google n'a pas validé cette application » (normal en mode test) : *Continuer*. La connexion dure une heure ; au-delà, elle est redemandée lors de la prochaine vérification.
-Pour qu'un membre de la famille puisse charger le fichier, il faut **partager le fichier avec son adresse Gmail** et **l'ajouter aux utilisateurs test**.
+Pour qu'un membre de la famille puisse charger le fichier, son compte Google doit **avoir accès au fichier** (partage fait par le propriétaire du fichier) et être **ajouté aux utilisateurs test**.
 
 ## Installer l'application
 

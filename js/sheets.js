@@ -138,7 +138,7 @@ export async function fetchSheet(input) {
     }
   }
   throw new Error(
-    "Impossible de lire le fichier. Dans Google Sheets : Partager → Accès général → « Tous les utilisateurs disposant du lien » (Lecteur). " +
+    "Impossible de lire le fichier sans connexion Google : il n'est pas public. Renseignez l'identifiant client Google dans les réglages (« Fichier privé : connexion Google ») pour vous connecter avec votre compte. " +
     `(Détail : ${problems.join(' ; ')})`
   );
 }
