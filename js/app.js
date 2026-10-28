@@ -4,9 +4,9 @@ import * as store from './storage.js';
 import { fetchSheet, fetchSheetWithToken, hashText } from './sheets.js';
 import * as auth from './auth.js';
 import { fileToCsv } from './importers.js';
-import { computeTree, renderInto, exportSvgString, PanZoom } from './tree.js';
+import { computeTree, computeCompactTree, renderInto, exportSvgString, PanZoom } from './tree.js';
 
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.4.0';
 // Fichier de la famille proposé par défaut au premier lancement
 const DEFAULT_URL = 'https://docs.google.com/spreadsheets/d/1GVpEFBoonQ2M5ZG7dK4_bNW2w1BkZXE9ZupN6cHlXYM/edit';
 // Identifiant client Google (OAuth) pour lire le fichier privé avec son compte Google.
@@ -215,11 +215,15 @@ function renderTree(fit) {
   $('toolbar').hidden = !has;
   $('treeInfo').hidden = !has;
   if (!has) { viewport.textContent = ''; renderEmpty(); return; }
-  state.tree = computeTree(state.db, state.rootId, state.ancDepth, state.descDepth);
+  const compute = state.view === 'compact' ? computeCompactTree : computeTree;
+  state.tree = compute(state.db, state.rootId, state.ancDepth, state.descDepth);
   renderInto(viewport, state.db, state.tree);
   const p = state.db.get(state.rootId);
   $('treeInfo').textContent = `${p.name} · ${state.tree.ancCount} ascendant${state.tree.ancCount > 1 ? 's' : ''} · ${state.tree.descCount} descendant${state.tree.descCount > 1 ? 's' : ''}`;
-  if (fit) requestAnimationFrame(() => pz.fit(state.tree.bbox, true));
+  if (fit) {
+    const t = state.tree;
+    requestAnimationFrame(() => (t.compact ? pz.focus(t.focusWidth, t.bbox) : pz.fit(t.bbox, true)));
+  }
   document.title = `${p.name} – Familien`;
 }
 
@@ -500,6 +504,19 @@ $('btnClear').onclick = async () => {
 
 $('zoomIn').onclick = () => pz.zoomCenter(1.25);
 $('zoomOut').onclick = () => pz.zoomCenter(0.8);
+function setView(view) {
+  state.view = view;
+  prefs.set('view', view);
+  const compact = view === 'compact';
+  $('btnView').classList.toggle('active', compact);
+  $('btnView').setAttribute('aria-pressed', String(compact));
+  $('btnView').title = compact ? 'Revenir à la vue en arbre' : 'Vue compacte verticale (idéale sur téléphone)';
+}
+$('btnView').onclick = () => {
+  setView(state.view === 'compact' ? 'tree' : 'compact');
+  renderTree(true);
+  toast(state.view === 'compact' ? 'Vue compacte : descendants en liste, ancêtres en escalier.' : 'Vue en arbre.', { duration: 2500 });
+};
 $('zoomFit').onclick = () => state.tree && pz.fit(state.tree.bbox);
 $('ancDepth').onchange = (e) => { state.ancDepth = Number(e.target.value); prefs.set('anc', state.ancDepth); renderTree(true); };
 $('descDepth').onchange = (e) => { state.descDepth = Number(e.target.value); prefs.set('desc', state.descDepth); renderTree(true); };
@@ -590,6 +607,7 @@ async function init() {
   $('appVersion').textContent = `Familien ${APP_VERSION}`;
   state.ancDepth = prefs.get('anc', 99);
   state.descDepth = prefs.get('desc', 99);
+  setView(prefs.get('view', 'tree'));
   fillDepthSelect($('ancDepth'), state.ancDepth);
   fillDepthSelect($('descDepth'), state.descDepth);
 

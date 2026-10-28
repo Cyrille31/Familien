@@ -157,6 +157,129 @@ export function computeTree(db, rootId, ancDepth, descDepth) {
   };
 }
 
+// ---------- Vue compacte (verticale) ----------
+// Ascendants « en escalier » : chaque personne a son père juste au-dessus d'elle,
+// décalé d'un cran vers l'extérieur, et sa mère au-dessus de la lignée du père.
+// Côté paternel à gauche, côté maternel à droite (en miroir), de sorte que le
+// père et la mère sont tous deux juste au-dessus de la personne choisie.
+// Descendants en liste indentée, un par ligne, conjoints à droite.
+
+const C_IND = 26;              // décalage d'une génération
+const C_ROW = BOX_H + 12;      // hauteur d'une ligne
+const C_GAP = 24;              // écart entre côté paternel et côté maternel
+const C_ROOT_GAP = 22;         // espace supplémentaire autour de la personne choisie
+
+// Lignes (de haut en bas) de la personne et de ses ascendants, la personne en dernier.
+function ancestorRows(db, id, gen, maxDepth, path) {
+  const p = db.get(id);
+  if (!p) return [];
+  const parents = [p.father, p.mother].filter(Boolean);
+  if (gen >= maxDepth || path.has(id)) return [{ id, gen, more: gen >= maxDepth && parents.length > 0, parents: [] }];
+  path.add(id);
+  const rows = [];
+  const me = { id, gen, more: false, parents: [] };
+  for (const q of [p.mother, p.father]) {
+    if (!q) continue;
+    const sub = ancestorRows(db, q, gen + 1, maxDepth, path);
+    if (sub.length) me.parents.push(sub[sub.length - 1]);
+    rows.push(...sub);
+  }
+  path.delete(id);
+  rows.push(me);
+  return rows;
+}
+
+export function computeCompactTree(db, rootId, ancDepth, descDepth) {
+  const boxes = [];
+  const lines = [];
+  const unions = [];
+  const root = db.get(rootId);
+  const half = BOX_W / 2;
+
+  // --- Ascendants ---
+  // Bord gauche d'une case selon le côté et la génération (gen 1 = parents).
+  const leftEdge = (side, gen) => side === 'L'
+    ? -C_GAP / 2 - BOX_W - (gen - 1) * C_IND
+    : C_GAP / 2 + (gen - 1) * C_IND;
+  let ancCount = 0;
+  let fPos = null, mPos = null;
+  const sides = [['L', root.father], ['R', root.mother]];
+  const parentRowY = -(C_ROW + C_ROOT_GAP);
+  for (const [side, pid] of sides) {
+    if (!pid || ancDepth < 1) continue;
+    const rows = ancestorRows(db, pid, 1, ancDepth, new Set([rootId]));
+    rows.forEach((r, i) => {
+      const y = parentRowY - (rows.length - 1 - i) * C_ROW;
+      const x = leftEdge(side, r.gen);
+      r.x = x; r.y = y;
+      boxes.push({ id: r.id, x: x + half, y, kind: 'anc', more: r.more ? 'up' : '' });
+      ancCount++;
+    });
+    // Traits : des parents vers l'enfant, par le côté extérieur au tronc
+    if (side === 'L') fPos = rows[rows.length - 1]; else mPos = rows[rows.length - 1];
+    for (const me of rows) {
+      const par = me.parents;
+      if (!par.length) continue;
+      const lx = side === 'L' ? me.x + BOX_W - C_IND / 2 : me.x + C_IND / 2;
+      let d = '';
+      for (const q of par) d += `M${side === 'L' ? q.x + BOX_W : q.x} ${q.y}H${lx}`;
+      d += `M${lx} ${Math.min(...par.map((q) => q.y))}V${me.y - BOX_H / 2}`;
+      lines.push(d);
+    }
+  }
+  // Trait des deux parents vers la personne choisie
+  if (fPos || mPos) {
+    const bus = -BOX_H / 2 - C_ROOT_GAP / 2 - 4;
+    const xs = [];
+    let d = '';
+    for (const q of [fPos, mPos].filter(Boolean)) {
+      xs.push(q.x + half);
+      d += `M${q.x + half} ${q.y + BOX_H / 2}V${bus}`;
+    }
+    d += `M${Math.min(0, ...xs)} ${bus}H${Math.max(0, ...xs)}M0 ${bus}V${-BOX_H / 2}`;
+    lines.push(d);
+  }
+
+  // --- Personne choisie et descendants : liste indentée ---
+  const desc = buildDescendants(db, rootId, descDepth);
+  let row = 0;
+  let descCount = 0;
+  const rootLeft = -half;
+  (function walk(n, depth) {
+    const x = rootLeft + depth * C_IND;
+    const y = row === 0 ? 0 : row * C_ROW + C_ROOT_GAP;
+    row++;
+    n.x = x; n.y = y;
+    boxes.push({ id: n.id, x: x + half, y, kind: depth === 0 ? 'root' : 'desc', more: n.more ? 'down' : '' });
+    if (depth > 0) descCount++;
+    n.spouses.forEach((sid, k) => {
+      const sx = x + (k + 1) * (BOX_W + SP_GAP);
+      boxes.push({ id: sid, x: sx + half, y, kind: 'spouse', more: '' });
+      unions.push(`M${x + BOX_W} ${y}H${sx}`);
+    });
+    n.kids.forEach((k) => walk(k, depth + 1));
+    if (n.kids.length) {
+      const lx = x + C_IND / 2;
+      let d = `M${lx} ${y + BOX_H / 2}V${n.kids[n.kids.length - 1].y}`;
+      for (const k of n.kids) d += `M${lx} ${k.y}H${k.x}`;
+      lines.push(d);
+    }
+  })(desc, 0);
+
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const b of boxes) {
+    minX = Math.min(minX, b.x - half); maxX = Math.max(maxX, b.x + half);
+    minY = Math.min(minY, b.y - BOX_H / 2); maxY = Math.max(maxY, b.y + BOX_H / 2);
+  }
+  const pad = 30;
+  return {
+    boxes, lines, unions, ancCount, descCount, compact: true,
+    // Largeur à montrer à l'ouverture : les deux parents et quelques crans d'ancêtres
+    focusWidth: 2 * BOX_W + C_GAP + 5 * C_IND + 20,
+    bbox: { x: minX - pad, y: minY - pad, w: maxX - minX + 2 * pad, h: maxY - minY + 2 * pad },
+  };
+}
+
 function el(name, attrs = {}, parent) {
   const e = document.createElementNS(SVG_NS, name);
   for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
@@ -281,6 +404,17 @@ export class PanZoom {
       this.tx = W / 2 - (bbox.x + bbox.w / 2) * s;
       this.ty = top + H / 2 - (bbox.y + bbox.h / 2) * s;
     }
+    this.apply();
+  }
+  // Centre la personne choisie, assez zoomé pour lire ses parents de part et d'autre.
+  focus(width, bbox = this.bbox) {
+    this.bbox = bbox;
+    const r = this.svg.getBoundingClientRect();
+    const top = 40, bottom = 76;
+    const W = r.width || 360, H = Math.max(120, (r.height || 500) - top - bottom);
+    this.s = Math.min(1.1, W / width);
+    this.tx = W / 2;
+    this.ty = top + H * 0.5;
     this.apply();
   }
   local(e) { const r = this.svg.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
