@@ -9,7 +9,7 @@ const ROW = BOX_H + V_GAP;
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 // Compactage par contours (type Reingold-Tilford simplifié).
-function layoutTree(root, extent, childCenter) {
+export function layoutTree(root, extent, childCenter) {
   function rec(node) {
     const [l, r] = extent(node);
     // Pile verticale d'enfants (vue intermédiaire) : occupe plusieurs niveaux
@@ -43,7 +43,7 @@ function layoutTree(root, extent, childCenter) {
   })(root, 0, 0);
 }
 
-function buildAncestors(db, id, maxDepth) {
+export function buildAncestors(db, id, maxDepth) {
   const path = new Set();
   const rec = (pid, depth) => {
     const p = db.get(pid);
@@ -59,7 +59,7 @@ function buildAncestors(db, id, maxDepth) {
   return rec(id, 0);
 }
 
-function buildDescendants(db, id, maxDepth) {
+export function buildDescendants(db, id, maxDepth) {
   const path = new Set();
   const rec = (pid, depth) => {
     const kidsAll = db.childrenOf(pid);
@@ -97,18 +97,20 @@ const S_LINE = 12;          // trait vertical à gauche de la pile
 function stackLeaves(node) {
   if (!node.kids.length) return;
   node.kids.forEach(stackLeaves);
+  // Seuls les enfants sans descendants qui se suivent forment une pile :
+  // l'ordre de naissance est conservé (de gauche à droite, puis de haut en bas).
   const kids = [], groups = [];
   let i = 0;
   while (i < node.kids.length) {
     const g = node.groups[i];
-    const branch = [], leaves = [];
-    for (; i < node.kids.length && node.groups[i] === g; i++) (node.kids[i].kids.length ? branch : leaves).push(node.kids[i]);
-    for (const k of branch) { kids.push(k); groups.push(g); }
-    if (leaves.length > 1) {
-      const levels = 1 + Math.ceil(((leaves.length - 1) * S_ROW) / ROW);
-      kids.push({ stack: leaves, kids: [], spouses: [], levels });
+    if (node.kids[i].kids.length) { kids.push(node.kids[i]); groups.push(g); i++; continue; }
+    const run = [];
+    for (; i < node.kids.length && node.groups[i] === g && !node.kids[i].kids.length; i++) run.push(node.kids[i]);
+    if (run.length > 1) {
+      const levels = 1 + Math.ceil(((run.length - 1) * S_ROW) / ROW);
+      kids.push({ stack: run, kids: [], spouses: [], levels });
       groups.push(g);
-    } else for (const k of leaves) { kids.push(k); groups.push(g); }
+    } else { kids.push(run[0]); groups.push(g); }
   }
   node.kids = kids;
   node.groups = groups;
@@ -132,7 +134,7 @@ function packRow(desired, gap) {
 }
 
 // Ascendants resserrés : chaque couple de parents au plus près au-dessus de son enfant.
-function layoutAncestorsClose(anc) {
+export function layoutAncestorsClose(anc) {
   const rows = [];
   (function collect(n, depth, child) {
     n.depth = depth; n.child = child;
@@ -451,6 +453,7 @@ function lifeLine(p) {
 // Dessine le contenu de l'arbre dans un <g>.
 export function renderInto(g, db, tree) {
   g.textContent = '';
+  if (tree.render) return tree.render(g, db); // vue « chêne »
   const lineG = el('g', { class: 't-lines' }, g);
   for (const d of tree.unions) el('path', { d, class: 't-union' }, lineG);
   for (const d of tree.lines) el('path', { d }, lineG);

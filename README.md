@@ -12,10 +12,11 @@ Tapez le nom d'une personne : Familien affiche son **arbre complet**, avec tous 
 - **Le Drive n'est contacté que sur demande** : bouton « Drive » en haut, ou vérification au démarrage (option désactivable dans les réglages).
 - **Alerte de modification** : si le fichier a changé sur le Drive, une alerte indique combien de personnes ont été ajoutées / modifiées / supprimées, et vous **acceptez ou non** la mise à jour. Si vous refusez, un point orange rappelle qu'une nouvelle version existe.
 - Fiche de chaque personne (dates, lieux, profession, notes, parents, conjoints, enfants, frères et sœurs) en touchant sa case.
-- **Trois vues** (bouton à gauche du zoom, chaque appui passe à la suivante) :
+- **Trois vues** (bouton à gauche du zoom, chaque appui passe à la suivante) ; les frères et sœurs restent dans l'ordre de naissance :
   - *Arbre* : la vue classique ;
   - *Intermédiaire* : enfants sans descendants affichés empilés en colonne, parents resserrés juste au-dessus de leur enfant ;
   - *Compacte*, idéale sur téléphone : descendants en liste verticale, ancêtres « en escalier » (côté paternel à gauche, maternel à droite), les deux parents juste au-dessus de la personne.
+  - *Chêne* : l'arbre dessiné comme une gravure ancienne, ancêtres dans les racines, enfants dans les branches, dernière génération dans les feuilles, en calligraphie (polices IM Fell English et Pinyon Script, licence SIL OFL, dans `fonts/`).
 - **Lien entre deux personnes** : dans la fiche d'une personne, « Lien avec une autre personne… », puis choisir la 2e. L'application affiche uniquement le chemin qui les relie (ancêtre commun le plus proche, sinon descendant commun, sinon alliance) et nomme le lien (frère, nièce, cousin germain, grand-oncle…).
 - Zoom au doigt (pincer) ou à la molette, nombre de générations réglable, export de l'arbre en image PNG ou SVG (pour imprimer).
 - Thème clair / sombre automatique.
@@ -92,5 +93,7 @@ Application web progressive (PWA) sans dépendance ni compilation : HTML, CSS et
 - `js/tree.js` : mise en page compacte de l'arbre, dessin SVG, zoom/déplacement tactile, export
 - `js/auth.js` : connexion Google (OAuth 2.0 par redirection, jeton en lecture seule)
 - `js/importers.js` : import d'un fichier .csv ou d'une page Google Sheets enregistrée (.mht, .html)
+- `js/oak.js` : vue « chêne » (gravure)
+- `js/relation.js` : lien de parenté entre deux personnes
 - `js/storage.js` : enregistrement local (IndexedDB)
 - `sw.js` : service worker pour le fonctionnement hors ligne (augmenter `VERSION` à chaque modification)

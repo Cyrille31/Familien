@@ -6,8 +6,9 @@ import * as auth from './auth.js';
 import { fileToCsv } from './importers.js';
 import { computeTree, computeCompactTree, computePathTree, renderInto, exportSvgString, PanZoom } from './tree.js';
 import { findRelation } from './relation.js';
+import { computeOak, exportOakSvg, OAK_STYLE } from './oak.js';
 
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.6.0';
 // Fichier de la famille proposé par défaut au premier lancement
 const DEFAULT_URL = 'https://docs.google.com/spreadsheets/d/1GVpEFBoonQ2M5ZG7dK4_bNW2w1BkZXE9ZupN6cHlXYM/edit';
 // Identifiant client Google (OAuth) pour lire le fichier privé avec son compte Google.
@@ -209,12 +210,15 @@ async function checkForUpdate({ silent = false } = {}) {
 
 const svg = $('treeSvg');
 const viewport = $('viewport');
+document.head.appendChild(Object.assign(document.createElement('style'), { textContent: OAK_STYLE }));
+
 const pz = new PanZoom(svg, viewport, (id) => (state.pickFrom ? showRelation(state.pickFrom, id) : showPerson(id)));
 
 const VIEWS = {
   tree: { label: 'Vue en arbre', next: 'mixed' },
   mixed: { label: 'Vue intermédiaire : enfants sans descendants en colonne, parents resserrés', next: 'compact' },
-  compact: { label: 'Vue compacte : descendants en liste, ancêtres en escalier', next: 'tree' },
+  compact: { label: 'Vue compacte : descendants en liste, ancêtres en escalier', next: 'oak' },
+  oak: { label: 'Vue « chêne » : ancêtres dans les racines, descendants dans les branches et les feuilles', next: 'tree' },
 };
 
 function renderTree(fit) {
@@ -227,15 +231,15 @@ function renderTree(fit) {
   $('toolbar').hidden = !has;
   $('treeInfo').hidden = !has;
   if (!has) { viewport.textContent = ''; renderEmpty(); return; }
-  state.tree = state.view === 'compact'
-    ? computeCompactTree(state.db, state.rootId, state.ancDepth, state.descDepth)
-    : computeTree(state.db, state.rootId, state.ancDepth, state.descDepth, { mixed: state.view === 'mixed' });
+  state.tree = state.view === 'compact' ? computeCompactTree(state.db, state.rootId, state.ancDepth, state.descDepth)
+    : state.view === 'oak' ? computeOak(state.db, state.rootId, state.ancDepth, state.descDepth)
+      : computeTree(state.db, state.rootId, state.ancDepth, state.descDepth, { mixed: state.view === 'mixed' });
   renderInto(viewport, state.db, state.tree);
   const p = state.db.get(state.rootId);
   $('treeInfo').textContent = `${p.name} · ${state.tree.ancCount} ascendant${state.tree.ancCount > 1 ? 's' : ''} · ${state.tree.descCount} descendant${state.tree.descCount > 1 ? 's' : ''}`;
   if (fit) {
     const t = state.tree;
-    requestAnimationFrame(() => (t.compact ? pz.focus(t.focusWidth, t.bbox) : pz.fit(t.bbox, true)));
+    requestAnimationFrame(() => (t.compact ? pz.focus(t.focusWidth, t.bbox) : pz.fit(t.bbox, !t.oak)));
   }
   document.title = `${p.name} – Familien`;
 }
@@ -394,12 +398,28 @@ const search = $('search');
 const results = $('results');
 let resultItems = [];
 
+// « fille de Cyrille et Marie Jo Gindre » : distingue les homonymes
+function parentsPhrase(p) {
+  const f = p.father && state.db.get(p.father), m = p.mother && state.db.get(p.mother);
+  if (!f && !m) return '';
+  const word = p.sex === 'F' ? 'fille de' : p.sex === 'M' ? 'fils de' : 'enfant de';
+  if (f && m) {
+    const same = f.lastName && f.lastName === m.lastName && f.firstName && m.firstName;
+    return `${word} ${same ? `${f.firstName} et ${m.firstName} ${m.lastName}` : `${f.name} et ${m.name}`}`;
+  }
+  return `${word} ${(f || m).name}`;
+}
+
 function renderResults() {
   const q = search.value;
   if (!state.db || !q.trim()) { results.hidden = true; return; }
   resultItems = state.db.search(q);
   results.innerHTML = resultItems.length
-    ? resultItems.map((p, i) => `<li role="option" data-i="${i}"><b>${esc(p.name)}</b> <span class="muted">${esc([years(p), p.birthPlace].filter(Boolean).join(' · '))}</span></li>`).join('')
+    ? resultItems.map((p, i) => {
+      const y = years(p);
+      const info = [p.maidenName ? (p.sex === 'F' ? 'née ' : 'né ') + p.maidenName : '', parentsPhrase(p), p.birthPlace].filter(Boolean).join(' · ');
+      return `<li role="option" data-i="${i}"><b>${esc(p.name)}</b>${y ? ` <span class="muted">(${esc(y)})</span>` : ''}${info ? `<br><span class="muted small">${esc(info)}</span>` : ''}</li>`;
+    }).join('')
     : '<li class="none">Aucune personne trouvée</li>';
   results.hidden = false;
 }
@@ -619,13 +639,13 @@ async function saveBlob(blob, filename) {
 $('btnExport').onclick = () => $('dlgExport').showModal();
 $('expSvg').onclick = async () => {
   $('dlgExport').close();
-  const s = exportSvgString(state.db, state.tree);
+  const s = state.tree.oak ? await exportOakSvg(state.db, state.tree) : exportSvgString(state.db, state.tree);
   await saveBlob(new Blob([s], { type: 'image/svg+xml' }), fileBase() + '.svg');
 };
 $('expPng').onclick = async () => {
   $('dlgExport').close();
   const { w, h } = state.tree.bbox;
-  const s = exportSvgString(state.db, state.tree);
+  const s = state.tree.oak ? await exportOakSvg(state.db, state.tree) : exportSvgString(state.db, state.tree);
   // Limite de taille des images sur iPhone (~16 millions de pixels)
   const scale = Math.min(2, Math.sqrt(16e6 / (w * h)), 16000 / w, 16000 / h);
   const img = new Image();

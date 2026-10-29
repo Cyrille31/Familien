@@ -253,6 +253,12 @@ export function buildDatabase(rows, mapping) {
     p.sexRaw = p.sex;
     p.name = [p.firstName, p.lastName].filter(Boolean).join(' ') || '(sans nom)';
     p.birthYear = extractYear(p.birthDate);
+    // Clé de tri des fratries : date complète, puis rang des jumeaux (« 101,2 »)
+    const dm = String(p.birthDate).match(/(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})/);
+    const twin = (col(row, 'birthDM').match(/[,.](\d+)/) || [])[1] || '0';
+    p.birthKey = p.birthYear
+      ? p.birthYear + (dm ? dm[2].padStart(2, '0') + dm[1].padStart(2, '0') : '0000') + twin.padStart(2, '0')
+      : '99999999';
     p.deathYear = extractYear(p.deathDate);
     p.search = normalize(`${p.firstName} ${p.lastName} ${p.maidenName} ${p.fullName} ${p.id}`);
     // Sections : blocs de numéros de fiche qui se suivent
@@ -364,8 +370,8 @@ export function buildDatabase(rows, mapping) {
   }
   const byBirth = (a, b) => {
     const pa = persons.get(a), pb = persons.get(b);
-    const ya = pa.birthYear || '9999', yb = pb.birthYear || '9999';
-    return ya === yb ? pa.row - pb.row : ya < yb ? -1 : 1;
+    const ka = pa.birthKey, kb = pb.birthKey;
+    return ka === kb ? pa.row - pb.row : ka < kb ? -1 : 1;
   };
   for (const list of children.values()) list.sort(byBirth);
   // Les co-parents sont considérés comme conjoints
