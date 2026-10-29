@@ -12,7 +12,11 @@ Tapez le nom d'une personne : Familien affiche son **arbre complet**, avec tous 
 - **Le Drive n'est contacté que sur demande** : bouton « Drive » en haut, ou vérification au démarrage (option désactivable dans les réglages).
 - **Alerte de modification** : si le fichier a changé sur le Drive, une alerte indique combien de personnes ont été ajoutées / modifiées / supprimées, et vous **acceptez ou non** la mise à jour. Si vous refusez, un point orange rappelle qu'une nouvelle version existe.
 - Fiche de chaque personne (dates, lieux, profession, notes, parents, conjoints, enfants, frères et sœurs) en touchant sa case.
-- **Vue compacte** (bouton à gauche du zoom), idéale sur téléphone : descendants en liste verticale, ancêtres « en escalier » (côté paternel à gauche, maternel à droite), les deux parents juste au-dessus de la personne.
+- **Trois vues** (bouton à gauche du zoom, chaque appui passe à la suivante) :
+  - *Arbre* : la vue classique ;
+  - *Intermédiaire* : enfants sans descendants affichés empilés en colonne, parents resserrés juste au-dessus de leur enfant ;
+  - *Compacte*, idéale sur téléphone : descendants en liste verticale, ancêtres « en escalier » (côté paternel à gauche, maternel à droite), les deux parents juste au-dessus de la personne.
+- **Lien entre deux personnes** : dans la fiche d'une personne, « Lien avec une autre personne… », puis choisir la 2e. L'application affiche uniquement le chemin qui les relie (ancêtre commun le plus proche, sinon descendant commun, sinon alliance) et nomme le lien (frère, nièce, cousin germain, grand-oncle…).
 - Zoom au doigt (pincer) ou à la molette, nombre de générations réglable, export de l'arbre en image PNG ou SVG (pour imprimer).
 - Thème clair / sombre automatique.
 
