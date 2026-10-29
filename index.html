@@ -59,8 +59,10 @@
         <select id="descDepth"></select>
       </label>
       <span class="spacer"></span>
-      <button id="btnView" class="icon-btn small" aria-label="Changer de vue" aria-pressed="false" title="Vue compacte verticale (idéale sur téléphone)">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h9M8 10h9M12 15h8M12 20h8M8 10v10M4 5v5"/></svg>
+      <button id="btnView" class="icon-btn small" aria-label="Changer de vue" data-view="tree">
+        <svg viewBox="0 0 24 24" class="v-tree" aria-hidden="true"><circle cx="12" cy="5" r="2"/><path d="M12 7v4M6 11h12M6 11v4M18 11v4"/><circle cx="6" cy="17" r="2"/><circle cx="18" cy="17" r="2"/></svg>
+        <svg viewBox="0 0 24 24" class="v-mixed" aria-hidden="true"><circle cx="12" cy="4" r="2"/><path d="M12 6v4M6 10h12M6 10v2M18 10v10M18 14h3M18 19h3"/><circle cx="6" cy="14" r="2"/></svg>
+        <svg viewBox="0 0 24 24" class="v-compact" aria-hidden="true"><path d="M4 5h9M8 10h9M12 15h8M12 20h8M8 10v10M4 5v5"/></svg>
       </button>
       <button id="zoomOut" class="icon-btn small" aria-label="Dézoomer">−</button>
       <button id="zoomFit" class="icon-btn small" aria-label="Voir tout l'arbre" title="Voir tout l'arbre">⤢</button>
@@ -70,6 +72,10 @@
       </button>
     </div>
     <div id="treeInfo" class="tree-info" hidden></div>
+    <div id="relBanner" class="rel-banner" hidden>
+      <div id="relText"></div>
+      <button id="relClose" class="panel-close" aria-label="Fermer le lien">×</button>
+    </div>
   </main>
 
   <aside id="panel" class="panel" hidden aria-live="polite">

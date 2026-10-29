@@ -4,9 +4,10 @@ import * as store from './storage.js';
 import { fetchSheet, fetchSheetWithToken, hashText } from './sheets.js';
 import * as auth from './auth.js';
 import { fileToCsv } from './importers.js';
-import { computeTree, computeCompactTree, renderInto, exportSvgString, PanZoom } from './tree.js';
+import { computeTree, computeCompactTree, computePathTree, renderInto, exportSvgString, PanZoom } from './tree.js';
+import { findRelation } from './relation.js';
 
-const APP_VERSION = '1.4.0';
+const APP_VERSION = '1.5.0';
 // Fichier de la famille proposé par défaut au premier lancement
 const DEFAULT_URL = 'https://docs.google.com/spreadsheets/d/1GVpEFBoonQ2M5ZG7dK4_bNW2w1BkZXE9ZupN6cHlXYM/edit';
 // Identifiant client Google (OAuth) pour lire le fichier privé avec son compte Google.
@@ -23,6 +24,8 @@ const state = {
   tree: null,
   rootId: null,
   pending: null,   // nouvelle version du Drive en attente d'accord
+  relation: null,  // { a, b } : lien affiché entre deux personnes
+  pickFrom: null,  // 1re personne choisie, en attente de la 2e
   ancDepth: 99,
   descDepth: 99,
 };
@@ -206,17 +209,27 @@ async function checkForUpdate({ silent = false } = {}) {
 
 const svg = $('treeSvg');
 const viewport = $('viewport');
-const pz = new PanZoom(svg, viewport, (id) => showPerson(id));
+const pz = new PanZoom(svg, viewport, (id) => (state.pickFrom ? showRelation(state.pickFrom, id) : showPerson(id)));
+
+const VIEWS = {
+  tree: { label: 'Vue en arbre', next: 'mixed' },
+  mixed: { label: 'Vue intermédiaire : enfants sans descendants en colonne, parents resserrés', next: 'compact' },
+  compact: { label: 'Vue compacte : descendants en liste, ancêtres en escalier', next: 'tree' },
+};
 
 function renderTree(fit) {
+  if (state.relation) return renderRelation(fit);
+  $('relBanner').hidden = !state.pickFrom;
+  document.body.classList.remove('relation-mode');
   const has = state.db && state.rootId && state.db.get(state.rootId);
   $('empty').hidden = !!has;
   svg.style.visibility = has ? 'visible' : 'hidden';
   $('toolbar').hidden = !has;
   $('treeInfo').hidden = !has;
   if (!has) { viewport.textContent = ''; renderEmpty(); return; }
-  const compute = state.view === 'compact' ? computeCompactTree : computeTree;
-  state.tree = compute(state.db, state.rootId, state.ancDepth, state.descDepth);
+  state.tree = state.view === 'compact'
+    ? computeCompactTree(state.db, state.rootId, state.ancDepth, state.descDepth)
+    : computeTree(state.db, state.rootId, state.ancDepth, state.descDepth, { mixed: state.view === 'mixed' });
   renderInto(viewport, state.db, state.tree);
   const p = state.db.get(state.rootId);
   $('treeInfo').textContent = `${p.name} · ${state.tree.ancCount} ascendant${state.tree.ancCount > 1 ? 's' : ''} · ${state.tree.descCount} descendant${state.tree.descCount > 1 ? 's' : ''}`;
@@ -225,6 +238,53 @@ function renderTree(fit) {
     requestAnimationFrame(() => (t.compact ? pz.focus(t.focusWidth, t.bbox) : pz.fit(t.bbox, true)));
   }
   document.title = `${p.name} – Familien`;
+}
+
+// ---------- Lien entre deux personnes ----------
+
+function startRelationPick(id) {
+  state.pickFrom = id;
+  hidePanel();
+  $('relText').innerHTML = `<b>Lien avec ${esc(state.db.get(id).name)}</b><br><span class="muted">Choisissez la 2e personne : recherchez son nom ou touchez sa case.</span>`;
+  $('relBanner').hidden = false;
+  search.focus();
+}
+
+function showRelation(a, b, push = true) {
+  if (a === b) { toast('Choisissez une autre personne.'); return; }
+  state.pickFrom = null;
+  state.relation = { a, b };
+  hidePanel();
+  const hash = '#r=' + encodeURIComponent(a) + '|' + encodeURIComponent(b);
+  if (push && location.hash !== hash) history.pushState({ a, b }, '', hash);
+  renderTree(true);
+}
+
+function closeRelation() {
+  state.pickFrom = null;
+  $('relBanner').hidden = true;
+  if (!state.relation) return;
+  const back = state.relation.a;
+  state.relation = null;
+  selectRoot(back);
+}
+
+function renderRelation(fit) {
+  const { a, b } = state.relation;
+  const rel = findRelation(state.db, a, b);
+  if (!rel) { state.relation = null; return renderTree(fit); }
+  document.body.classList.add('relation-mode');
+  $('empty').hidden = true;
+  $('toolbar').hidden = false;
+  $('treeInfo').hidden = true;
+  $('relText').innerHTML = `<b>${esc(rel.text)}</b>${rel.detail ? `<br><span class="muted">${esc(rel.detail)}</span>` : ''}`;
+  $('relBanner').hidden = false;
+  if (!rel.steps.length) { viewport.textContent = ''; svg.style.visibility = 'hidden'; return; }
+  svg.style.visibility = 'visible';
+  state.tree = computePathTree(state.db, rel);
+  renderInto(viewport, state.db, state.tree);
+  document.title = `Lien ${state.db.get(a).name} – ${state.db.get(b).name}`;
+  if (fit) requestAnimationFrame(() => pz.fit(state.tree.bbox, false, $('relBanner').offsetHeight + 16));
 }
 
 function renderEmpty() {
@@ -251,6 +311,11 @@ function selectRoot(id, push = true) {
 }
 
 window.addEventListener('popstate', () => {
+  const r = location.hash.match(/^#r=([^|]+)\|(.+)$/);
+  if (r && state.db?.get(decodeURIComponent(r[1])) && state.db.get(decodeURIComponent(r[2]))) {
+    return showRelation(decodeURIComponent(r[1]), decodeURIComponent(r[2]), false);
+  }
+  state.relation = null;
   const m = location.hash.match(/^#p=(.+)$/);
   const id = m ? decodeURIComponent(m[1]) : null;
   if (id && state.db?.get(id)) selectRoot(id, false);
@@ -291,7 +356,8 @@ function showPerson(id) {
       <h3>${esc(p.name)}</h3>
       <p class="muted">${esc([sexLabel, p.maidenName ? (p.sex === 'F' ? 'née ' : 'né ') + p.maidenName : '', years(p)].filter(Boolean).join(' · '))}</p>
     </div>
-    ${id !== state.rootId ? `<button class="btn primary block" data-root="${esc(id)}">Afficher son arbre</button>` : ''}
+    ${id !== state.rootId || state.relation ? `<button class="btn primary block" data-root="${esc(id)}">Afficher son arbre</button>` : ''}
+    <button class="btn block" data-rel="${esc(id)}">🔗 Lien avec une autre personne…</button>
     <dl class="facts">
       ${fact('Nom de naissance', p.maidenName)}
       ${fact('Naissance', p.birthDate, p.birthPlace)}
@@ -314,7 +380,9 @@ function hidePanel() { $('panel').hidden = true; state.panelId = null; }
 
 $('panelBody').addEventListener('click', (e) => {
   const root = e.target.closest('[data-root]');
-  if (root) return selectRoot(root.dataset.root);
+  if (root) { state.relation = null; state.pickFrom = null; return selectRoot(root.dataset.root); }
+  const rel = e.target.closest('[data-rel]');
+  if (rel) return startRelationPick(rel.dataset.rel);
   const link = e.target.closest('.plink');
   if (link) showPerson(link.dataset.id);
 });
@@ -342,6 +410,8 @@ function pickResult(i) {
   search.value = '';
   results.hidden = true;
   search.blur();
+  if (state.pickFrom) return showRelation(state.pickFrom, p.id);
+  state.relation = null;
   selectRoot(p.id);
 }
 
@@ -505,18 +575,20 @@ $('btnClear').onclick = async () => {
 $('zoomIn').onclick = () => pz.zoomCenter(1.25);
 $('zoomOut').onclick = () => pz.zoomCenter(0.8);
 function setView(view) {
+  if (!VIEWS[view]) view = 'tree';
   state.view = view;
   prefs.set('view', view);
-  const compact = view === 'compact';
-  $('btnView').classList.toggle('active', compact);
-  $('btnView').setAttribute('aria-pressed', String(compact));
-  $('btnView').title = compact ? 'Revenir à la vue en arbre' : 'Vue compacte verticale (idéale sur téléphone)';
+  const btn = $('btnView');
+  btn.dataset.view = view;
+  btn.classList.toggle('active', view !== 'tree');
+  btn.title = `${VIEWS[view].label} (toucher pour changer)`;
 }
 $('btnView').onclick = () => {
-  setView(state.view === 'compact' ? 'tree' : 'compact');
+  setView(VIEWS[state.view].next);
   renderTree(true);
-  toast(state.view === 'compact' ? 'Vue compacte : descendants en liste, ancêtres en escalier.' : 'Vue en arbre.', { duration: 2500 });
+  toast(VIEWS[state.view].label + '.', { duration: 2500 });
 };
+$('relClose').onclick = closeRelation;
 $('zoomFit').onclick = () => state.tree && pz.fit(state.tree.bbox);
 $('ancDepth').onchange = (e) => { state.ancDepth = Number(e.target.value); prefs.set('anc', state.ancDepth); renderTree(true); };
 $('descDepth').onchange = (e) => { state.descDepth = Number(e.target.value); prefs.set('desc', state.descDepth); renderTree(true); };
@@ -623,10 +695,15 @@ async function init() {
       state.db = prep.db;
     } catch (e) { toast(e.message); }
   }
+  const r = location.hash.match(/^#r=([^|]+)\|(.+)$/);
+  if (r && state.db?.get(decodeURIComponent(r[1])) && state.db.get(decodeURIComponent(r[2]))) {
+    state.relation = { a: decodeURIComponent(r[1]), b: decodeURIComponent(r[2]) };
+    state.rootId = state.relation.a;
+  }
   const m = location.hash.match(/^#p=(.+)$/);
   const fromHash = m ? decodeURIComponent(m[1]) : null;
   const start = fromHash && state.db?.get(fromHash) ? fromHash : prefs.get('root', null);
-  if (start && state.db?.get(start)) {
+  if (!state.relation && start && state.db?.get(start)) {
     state.rootId = start;
     history.replaceState({ id: start }, '', '#p=' + encodeURIComponent(start));
   }

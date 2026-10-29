@@ -12,6 +12,8 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 function layoutTree(root, extent, childCenter) {
   function rec(node) {
     const [l, r] = extent(node);
+    // Pile verticale d'enfants (vue intermédiaire) : occupe plusieurs niveaux
+    if (node.levels) { node.kidOffsets = []; return Array.from({ length: node.levels }, () => [l, r]); }
     if (!node.kids.length) { node.kidOffsets = []; return [[l, r]]; }
     const contours = node.kids.map(rec);
     const offs = [0];
@@ -87,11 +89,78 @@ function buildDescendants(db, id, maxDepth) {
 
 const spouseX = (node, k) => node.x + (k + 1) * (BOX_W + SP_GAP);
 
-export function computeTree(db, rootId, ancDepth, descDepth) {
+const S_ROW = BOX_H + 14;   // pas vertical d'une pile d'enfants
+const S_LINE = 12;          // trait vertical à gauche de la pile
+
+// Vue intermédiaire : dans chaque fratrie, les enfants sans descendants affichés
+// sont regroupés en une pile verticale (une par conjoint).
+function stackLeaves(node) {
+  if (!node.kids.length) return;
+  node.kids.forEach(stackLeaves);
+  const kids = [], groups = [];
+  let i = 0;
+  while (i < node.kids.length) {
+    const g = node.groups[i];
+    const branch = [], leaves = [];
+    for (; i < node.kids.length && node.groups[i] === g; i++) (node.kids[i].kids.length ? branch : leaves).push(node.kids[i]);
+    for (const k of branch) { kids.push(k); groups.push(g); }
+    if (leaves.length > 1) {
+      const levels = 1 + Math.ceil(((leaves.length - 1) * S_ROW) / ROW);
+      kids.push({ stack: leaves, kids: [], spouses: [], levels });
+      groups.push(g);
+    } else for (const k of leaves) { kids.push(k); groups.push(g); }
+  }
+  node.kids = kids;
+  node.groups = groups;
+}
+
+// Place une rangée de cases au plus près des positions souhaitées, sans chevauchement
+// et sans changer leur ordre (régression isotone, « pool adjacent violators »).
+function packRow(desired, gap) {
+  const blocks = [];
+  desired.forEach((p, i) => {
+    blocks.push({ sum: p - i * gap, n: 1 });
+    while (blocks.length > 1) {
+      const b = blocks[blocks.length - 1], a = blocks[blocks.length - 2];
+      if (a.sum / a.n <= b.sum / b.n) break;
+      a.sum += b.sum; a.n += b.n; blocks.pop();
+    }
+  });
+  const out = [];
+  for (const b of blocks) for (let k = 0; k < b.n; k++) out.push(b.sum / b.n + out.length * gap);
+  return out;
+}
+
+// Ascendants resserrés : chaque couple de parents au plus près au-dessus de son enfant.
+function layoutAncestorsClose(anc) {
+  const rows = [];
+  (function collect(n, depth, child) {
+    n.depth = depth; n.child = child;
+    (rows[depth] ||= []).push(n);
+    n.kids.forEach((k) => collect(k, depth + 1, n));
+  })(anc, 0, null);
+  anc.x = 0;
+  const step = BOX_W + H_GAP;
+  for (let d = 1; d < rows.length; d++) {
+    const desired = rows[d].map((n) => {
+      const c = n.child;
+      if (c.kids.length === 1) return c.x;
+      return c.x + (c.kids.indexOf(n) === 0 ? -step / 2 : step / 2);
+    });
+    packRow(desired, step).forEach((x, i) => { rows[d][i].x = x; });
+  }
+}
+
+export function computeTree(db, rootId, ancDepth, descDepth, { mixed = false } = {}) {
   const anc = buildAncestors(db, rootId, ancDepth);
-  layoutTree(anc, () => [-BOX_W / 2, BOX_W / 2], () => 0);
+  if (mixed) layoutAncestorsClose(anc);
+  else layoutTree(anc, () => [-BOX_W / 2, BOX_W / 2], () => 0);
   const desc = buildDescendants(db, rootId, descDepth);
-  const ext = (n) => [-BOX_W / 2, BOX_W / 2 + n.spouses.length * (BOX_W + SP_GAP)];
+  if (mixed) stackLeaves(desc);
+  const maxSp = (n) => Math.max(0, ...n.stack.map((k) => k.spouses.length));
+  const ext = (n) => n.stack
+    ? [-BOX_W / 2 - S_LINE - 2, BOX_W / 2 + maxSp(n) * (BOX_W + SP_GAP)]
+    : [-BOX_W / 2, BOX_W / 2 + n.spouses.length * (BOX_W + SP_GAP)];
   layoutTree(desc, ext, (n) => (ext(n)[0] + ext(n)[1]) / 2);
 
   const boxes = [];   // { id, x, y, kind, more }
@@ -103,7 +172,17 @@ export function computeTree(db, rootId, ancDepth, descDepth) {
   (function walk(n) {
     const y = -n.depth * ROW;
     if (n.depth > 0) { boxes.push({ id: n.id, x: n.x, y, kind: 'anc', more: n.more ? 'up' : '' }); ancCount++; }
-    if (n.kids.length) {
+    if (n.kids.length && mixed) {
+      // Courbes : ne se croisent jamais, même quand les parents sont décalés
+      const top = y - BOX_H / 2;
+      let d = '';
+      for (const k of n.kids) {
+        const ky = -k.depth * ROW + BOX_H / 2;
+        const my = (top + ky) / 2;
+        d += `M${n.x} ${top}C${n.x} ${my} ${k.x} ${my} ${k.x} ${ky}`;
+      }
+      lines.push(d);
+    } else if (n.kids.length) {
       const top = y - BOX_H / 2;
       const bus = top - V_GAP / 2;
       const xs = n.kids.map((k) => k.x);
@@ -116,8 +195,22 @@ export function computeTree(db, rootId, ancDepth, descDepth) {
   })(anc);
 
   let descCount = 0;
+  const stackLineX = (k) => k.x - BOX_W / 2 - S_LINE;
   (function walk(n) {
     const y = n.depth * ROW;
+    if (n.stack) {
+      n.stack.forEach((leaf, j) => {
+        const ly = y + j * S_ROW;
+        boxes.push({ id: leaf.id, x: n.x, y: ly, kind: 'desc', more: leaf.more ? 'down' : '' });
+        descCount++;
+        leaf.spouses.forEach((sid, k) => {
+          const sx = n.x + (k + 1) * (BOX_W + SP_GAP);
+          boxes.push({ id: sid, x: sx, y: ly, kind: 'spouse', more: '' });
+          unions.push(`M${n.x + BOX_W / 2} ${ly}H${sx - BOX_W / 2}`);
+        });
+      });
+      return;
+    }
     boxes.push({ id: n.id, x: n.x, y, kind: n.depth === 0 ? 'root' : 'desc', more: n.more ? 'down' : '' });
     if (n.depth > 0) descCount++;
     n.spouses.forEach((sid, k) => {
@@ -136,9 +229,15 @@ export function computeTree(db, rootId, ancDepth, descDepth) {
         const sx = g < 0 ? n.x : spouseX(n, g) - BOX_W / 2 - SP_GAP / 2;
         const sy = g < 0 ? y + BOX_H / 2 : y;
         const bus = y + BOX_H / 2 + V_GAP / 2 + (gi++) * 5 - 5 * (groups.size - 1) / 2;
-        const xs = kids.map((k) => k.x);
+        const xs = kids.map((k) => (k.stack ? stackLineX(k) : k.x));
         let d = `M${sx} ${sy}V${bus}M${Math.min(sx, ...xs)} ${bus}H${Math.max(sx, ...xs)}`;
-        for (const k of kids) d += `M${k.x} ${bus}V${k.depth * ROW - BOX_H / 2}`;
+        for (const k of kids) {
+          if (!k.stack) { d += `M${k.x} ${bus}V${k.depth * ROW - BOX_H / 2}`; continue; }
+          // Pile : trait vertical à gauche, puis un petit trait vers chaque enfant
+          const lx = stackLineX(k), y0 = k.depth * ROW;
+          d += `M${lx} ${bus}V${y0 + (k.stack.length - 1) * S_ROW}`;
+          k.stack.forEach((_, j) => { d += `M${lx} ${y0 + j * S_ROW}H${k.x - BOX_W / 2}`; });
+        }
         lines.push(d);
       }
     }
@@ -280,6 +379,53 @@ export function computeCompactTree(db, rootId, ancDepth, descDepth) {
   };
 }
 
+// ---------- Lien entre deux personnes ----------
+// Le chemin est dessiné de gauche à droite : on monte d'une génération vers un
+// parent, on descend vers un enfant, on reste au même niveau vers un conjoint.
+export function computePathTree(db, relation) {
+  const boxes = [], lines = [], unions = [];
+  const step = BOX_W + H_GAP;
+  const pts = [];
+  let x = 0, level = 0;
+  relation.steps.forEach((s, i) => {
+    if (s.move === 'up') { level--; x += step / 2; }
+    else if (s.move === 'down') { level++; x += step / 2; }
+    else if (s.move === 'spouse') x += BOX_W + SP_GAP;
+    const last = i === 0 || i === relation.steps.length - 1;
+    pts.push({ id: s.id, x, y: level * ROW });
+    boxes.push({ id: s.id, x, y: level * ROW, kind: last ? 'root' : 'anc', more: '' });
+  });
+  // Conjoint de l'ancêtre commun, s'il est aussi ancêtre commun
+  let coPt = null;
+  if (relation.co) {
+    const c = pts[relation.coIndex];
+    coPt = { x: c.x + BOX_W + SP_GAP, y: c.y };
+    boxes.push({ id: relation.co, x: coPt.x, y: coPt.y, kind: 'spouse', more: '' });
+    unions.push(`M${c.x + BOX_W / 2} ${c.y}H${coPt.x - BOX_W / 2}`);
+  }
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i], move = relation.steps[i].move;
+    if (move === 'spouse') { unions.push(`M${a.x + BOX_W / 2} ${a.y}H${b.x - BOX_W / 2}`); continue; }
+    const [top, bottom] = move === 'up' ? [b, a] : [a, b]; // parent au-dessus, enfant en dessous
+    // Depuis le milieu du couple quand l'ancêtre commun est accompagné de son conjoint
+    const fromCouple = coPt && (i === relation.coIndex || i === relation.coIndex + 1);
+    const sx = fromCouple ? (pts[relation.coIndex].x + coPt.x) / 2 : top.x;
+    const sy = fromCouple ? top.y : top.y + BOX_H / 2;
+    const bus = top.y + BOX_H / 2 + V_GAP / 2;
+    lines.push(`M${sx} ${sy}V${bus}H${bottom.x}V${bottom.y - BOX_H / 2}`);
+  }
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const b of boxes) {
+    minX = Math.min(minX, b.x - BOX_W / 2); maxX = Math.max(maxX, b.x + BOX_W / 2);
+    minY = Math.min(minY, b.y - BOX_H / 2); maxY = Math.max(maxY, b.y + BOX_H / 2);
+  }
+  const pad = 30;
+  return {
+    boxes, lines, unions, ancCount: 0, descCount: 0,
+    bbox: { x: minX - pad, y: minY - pad, w: maxX - minX + 2 * pad, h: maxY - minY + 2 * pad },
+  };
+}
+
 function el(name, attrs = {}, parent) {
   const e = document.createElementNS(SVG_NS, name);
   for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
@@ -386,12 +532,12 @@ export class PanZoom {
     this.apply();
   }
   zoomCenter(f) { const r = this.svg.getBoundingClientRect(); this.zoomAt(r.width / 2, r.height / 2, f); }
-  fit(bbox = this.bbox, focusRoot = false) {
+  fit(bbox = this.bbox, focusRoot = false, top = 40) {
     if (!bbox) return;
     this.bbox = bbox;
     const r = this.svg.getBoundingClientRect();
     // Marges : bandeau d'information en haut, barre d'outils en bas
-    const top = 40, bottom = 76;
+    const bottom = 76;
     const W = r.width || 360, H = Math.max(120, (r.height || 500) - top - bottom);
     const s = Math.min(W / bbox.w, H / bbox.h, 1.1);
     if (focusRoot && s < 0.4) {
