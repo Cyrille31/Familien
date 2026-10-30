@@ -111,17 +111,24 @@ export function drawGrain(lineG, knotG, pts, perp, width, from, to, mix, seed, o
   // Profil B·(1 − x²)^0,7 : reste à ~m de l'ellipse sur toute sa longueur, et s'annule en douceur
   // (aucun coude dans les rainures voisines, seule la rainure axiale se resserre en pointe)
   const gap = (knot, t) => { const x = (t - knot.t) / knot.A; return x * x < 1 ? knot.B * (1 - x * x) ** 0.7 : 0; };
+  // Hors de la zone d'un nœud (écart nul), la rainure n'est pas touchée ; dans la zone, elle
+  // passe toujours du même côté (décidé au niveau du nœud, après les nœuds précédents)
   const shape = (u0, u1, t, sides) => {
     let u = base(u0, u1, t);
     knots.forEach((knot, k) => {
-      const c = gap(knot, t), d = u - knot.u;
-      u = knot.u + sides[k] * Math.sqrt(d * d + c * c);
+      const c = gap(knot, t);
+      if (c > 0) { const d = u - knot.u; u = knot.u + sides[k] * Math.sqrt(d * d + c * c); }
     });
     return Math.max(-0.497, Math.min(0.497, u));
   };
   from.forEach((u0, j) => {
     // Chaque rainure contourne un nœud toujours du même côté (jamais de traversée)
-    const sides = knots.map((knot) => (base(u0, to[j], knot.t) < knot.u ? -1 : 1));
+    const sides = [];
+    knots.forEach((knot, k) => {
+      let u = base(u0, to[j], knot.t);
+      for (let m = 0; m < k; m++) { const c = gap(knots[m], knot.t); if (c > 0) { const d = u - knots[m].u; u = knots[m].u + sides[m] * Math.sqrt(d * d + c * c); } }
+      sides.push(u < knot.u ? -1 : 1);
+    });
     const q = pts.map((p, i) => {
       const t = i / N, u = shape(u0, to[j], t, sides), w = width(t);
       return { x: p.x + perp[i].x * u * w, y: p.y + perp[i].y * u * w };
@@ -488,7 +495,8 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
   // `amp` : ondulation maximale, bornée par l'écart entre branches voisines.
   // Tracé : avancée régulière dans la direction du parent (a·t), écart latéral progressif
   // (b·g(t)) ; les branches sœurs avancent au même rythme et restent donc dans l'ordre.
-  // g = t² (arrivée inclinée, vers une feuille) ou 3t² − 2t³ (arrivée dans l'axe).
+  // g = t² (arrivée inclinée, vers une feuille) ou 10t³ − 15t⁴ + 6t⁵ (départ sans courbure :
+  // les rainures du côté intérieur du virage ne se replient pas ; arrivée dans l'axe).
   function limb(S, d0, E, w0, w1, lines, seed, amp, waveSeed, toLeaf) {
     const L = Math.hypot(E.x - S.x, E.y - S.y);
     const q = perpOf(d0), vx = E.x - S.x, vy = E.y - S.y;
@@ -496,7 +504,7 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
     // Échantillons resserrés aux deux bouts : départ et arrivée exactement dans l'axe
     const n = 48, raw = [];
     for (let i = 0; i <= n; i++) {
-      const t = 0.5 - 0.5 * Math.cos((Math.PI * i) / n), g = toLeaf ? t * t : t * t * (3 - 2 * t);
+      const t = 0.5 - 0.5 * Math.cos((Math.PI * i) / n), g = toLeaf ? t * t : t * t * t * (10 - 15 * t + 6 * t * t);
       raw.push({ x: S.x + d0.x * a * t + q.x * b * g, y: S.y + d0.y * a * t + q.y * b * g });
     }
     // Axe légèrement ondulé (nul aux deux bouts), amincissement sans à-coup
@@ -504,6 +512,7 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
     const pts = wave(raw, waveSeed, Math.min(amp, Math.min(10, 2 + L * 0.018) * (w0 > 5 ? 1 : 0.6)));
     if (globalThis.__FAMILIEN_DEBUG) (globalThis.__limbs ||= []).push({ id: seed, pts });
     const perp = perpendiculars(pts);
+    perp[0] = { x: -d0.y, y: d0.x }; // départ exactement dans l'axe du parent : rainures alignées sur les siennes
     const width = taper(w0, w1);
     const side = (u) => pts.map((p, i) => ({ x: p.x + perp[i].x * u * width(i / n), y: p.y + perp[i].y * u * width(i / n) }));
     wood(poly([...side(0.5), ...side(-0.5).reverse()]) + 'Z');
@@ -534,7 +543,7 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
       const E = target(k);
       const lo = pos - k.start / 2, hi = pos + k.start / 2, last = k === kids[kids.length - 1];
       const mine = lines.map((u) => u * W).filter((v) => v >= lo && (last ? v <= hi : v < hi)).map((v) => (v - pos) / k.start);
-      const res = limb(S, dir, E, k.start, k.end, mine.length ? mine : [0], prefix + k.id, amp, prefix + 'w' + node.id, toLeaf);
+      const res = limb(S, dir, E, k.start, k.end, mine, prefix + k.id, amp, prefix + 'w' + node.id, toLeaf);
       // Arrivée dans l'axe du parent (g'(1) = 0) : les enfants repartent dans la même direction
       const d1 = dir;
       k.endPt = E;
