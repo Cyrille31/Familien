@@ -321,7 +321,16 @@ function renderChrono(g, db, o) {
     } else lines = [[shorten(k, p, room), 'ch-name', 4]];
     const w = Math.max(...lines.map((l) => l[0].length)) * CH + 10;
     el('rect', { x: toEnd ? -w : 0, y: spouses.length ? -24 : -9, width: w, height: spouses.length ? 46 : 16, fill: 'transparent' }, grp);
-    for (const [s, cls, y] of lines) text(grp, 0, y, s, k.est && cls === 'ch-name' ? cls + ' est' : cls, anchor);
+    for (const [s, cls, y] of lines) {
+      // La ligne du conjoint ouvre la fiche du conjoint, pas celle du descendant
+      let into = grp;
+      if (cls === 'ch-name spouse') {
+        into = el('g', { class: 't-person ch-person', 'data-id': spouses[0] }, grp);
+        const sw = s.length * CH + 10;
+        el('rect', { x: toEnd ? -sw : 0, y: y - 11, width: sw, height: 15, fill: 'transparent' }, into);
+      }
+      text(into, 0, y, s, k.est && cls === 'ch-name' ? cls + ' est' : cls, anchor);
+    }
     const dot = P(center, k.r, a);
     el('circle', { cx: f2(dot.x), cy: f2(dot.y), r: 3.2, class: 'ch-dot' }, labelG);
   };
