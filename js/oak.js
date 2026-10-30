@@ -200,9 +200,9 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
     const at = (i, u) => { const q = perpOf(tan[i]), w = width(i / n); return { x: pts[i].x + q.x * u * w, y: pts[i].y + q.y * u * w }; };
     const left = pts.map((_, i) => at(i, 0.5)), right = pts.map((_, i) => at(i, -0.5));
     wood(poly([...left, ...right.reverse()]) + 'Z');
-    const m = Math.min(lines.length, Math.floor(w1 / 2.4) || (w0 > 7 ? 1 : 0));
-    const keep = m ? Array.from({ length: m }, (_, j) => lines[Math.round(((j + 0.5) * lines.length) / m - 0.5)]) : [];
-    const target = cyl(m);
+    // Toutes les nervures reçues se prolongent, dans l'ordre (aucun croisement)
+    const keep = [...lines].sort((x, y) => x - y);
+    const target = cyl(keep.length);
     keep.forEach((u0, j) => {
       el('path', { d: poly(pts.map((_, i) => at(i, u0 + (target[j] - u0) * ss(Math.min(1, i / n / 0.45))))) }, hatchG);
     });
@@ -219,7 +219,8 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
       acc += k.start;
       const S = { x: P.x + q.x * pos, y: P.y + q.y * pos };
       const E = target(k);
-      const mine = lines.map((u) => u * W).filter((v) => v >= pos - k.start / 2 && v <= pos + k.start / 2).map((v) => (v - pos) / k.start);
+      const lo = pos - k.start / 2, hi = pos + k.start / 2, last = k === kids[kids.length - 1];
+      const mine = lines.map((u) => u * W).filter((v) => v >= lo && (last ? v <= hi : v < hi)).map((v) => (v - pos) / k.start);
       const d1 = k.endDir(S, E);
       const res = limb(S, dir, E, d1, k.start, k.end, mine.length ? mine : [0], prefix + k.id);
       k.endPt = E;

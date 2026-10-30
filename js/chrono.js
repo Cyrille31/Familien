@@ -179,11 +179,18 @@ function renderChrono(g, db, o) {
   // Une branche : part du centre de la section du parent (décalée de `off` le long
   // de la perpendiculaire), file en arc vers sa position, et arrive dans l'axe du rayon.
   // `lines` : positions relatives (-0,5 … 0,5) des nervures reçues du parent.
-  function limb(center, r0, a0, k, w0, w1, off, lines, seed) {
-    const n = 30, rr = rng(seed), wob = (rr() - 0.5) * 0.05;
+  // Une branche : part du centre de la section du parent (décalée de `off` le long
+  // de la perpendiculaire) et tourne vers sa direction dans une zone de largeur
+  // radiale D, commune à toute la fratrie (les branches ne peuvent donc pas se
+  // croiser), puis file droit vers l'extérieur.
+  // `lines` : positions relatives (-0,5 … 0,5) des nervures reçues du parent ;
+  // elles se prolongent toutes jusqu'au bout de la branche, sans se croiser.
+  function limb(center, r0, a0, k, w0, w1, off, lines, D) {
+    const n = 34;
     const n0 = nrm(a0);
+    const turn = (t) => ss(Math.min(1, ((k.r - r0) * t) / D));
     const at = (t) => {
-      const e = ss(t), p = P(center, r0 + (k.r - r0) * t, a0 + (k.angle - a0) * e + wob * Math.sin(Math.PI * t));
+      const e = turn(t), p = P(center, r0 + (k.r - r0) * t, a0 + (k.angle - a0) * e);
       return { x: p.x + n0.x * off * (1 - e), y: p.y + n0.y * off * (1 - e) };
     };
     const pts = Array.from({ length: n + 1 }, (_, i) => at(i / n));
@@ -196,13 +203,13 @@ function renderChrono(g, db, o) {
     const side = (u) => pts.map((p, i) => ({ x: p.x + perp[i].x * u * width(i / n), y: p.y + perp[i].y * u * width(i / n) }));
     const L = side(0.5), Rr = side(-0.5);
     wood(poly([...L, ...Rr.reverse()]) + 'Z');
-    // Nervures : continuité avec le parent, puis répartition « cylindrique »
-    const m = Math.min(lines.length, Math.floor(w1 / 2.3) || (w0 > 7 ? 1 : 0));
-    const keep = m ? Array.from({ length: m }, (_, j) => lines[Math.round(((j + 0.5) * lines.length) / m - 0.5)]) : [];
-    const target = cyl(m);
+    // Nervures : dans l'ordre (aucun croisement), elles glissent vers une
+    // répartition « cylindrique » pendant le virage, puis restent parallèles
+    const keep = [...lines].sort((x, y) => x - y);
+    const target = cyl(keep.length);
     keep.forEach((u0, j) => {
       const d = pts.map((p, i) => {
-        const t = i / n, u = u0 + (target[j] - u0) * ss(Math.min(1, t / 0.45));
+        const t = i / n, u = u0 + (target[j] - u0) * turn(t);
         return { x: p.x + perp[i].x * u * width(t), y: p.y + perp[i].y * u * width(t) };
       });
       el('path', { d: poly(d) }, grainG);
@@ -213,15 +220,17 @@ function renderChrono(g, db, o) {
   // Fourche : répartit les enfants côte à côte sur la section du parent
   function grow(center, node, r0, a0, endW, lines, prefix) {
     const kids = [...node.kids].sort((a, b) => b.angle - a.angle);
+    const D = Math.max(30, 0.8 * Math.min(...kids.map((k) => k.r - r0)));
     let acc = -endW / 2;
-    for (const k of kids) {
-      const pos = acc + k.start / 2;
-      acc += k.start;
-      const mine = lines.map((u) => u * endW).filter((q) => q >= pos - k.start / 2 && q <= pos + k.start / 2).map((q) => (q - pos) / k.start);
-      const res = limb(center, r0, a0, k, k.start, k.end, pos, mine.length ? mine : [0], prefix + k.id);
+    kids.forEach((k, i) => {
+      const lo = acc, hi = acc + k.start, pos = (lo + hi) / 2;
+      acc = hi;
+      const last = i === kids.length - 1;
+      const mine = lines.map((u) => u * endW).filter((q) => q >= lo && (last ? q <= hi : q < hi)).map((q) => (q - pos) / k.start);
+      const res = limb(center, r0, a0, k, k.start, k.end, pos, mine.length ? mine : [0], D);
       k.pt = res.end;
       if (k.kids.length) grow(center, k, k.r, k.angle, k.end, res.lines, prefix);
-    }
+    });
   }
 
   // Tronc : du sol (largeur TB) au centre de l'éventail (largeur TW), bords verticaux aux deux bouts
