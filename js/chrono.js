@@ -9,7 +9,7 @@
 // (effet de cylindre).
 
 import { buildAncestors, buildDescendants } from './tree.js';
-import { el, text, rng, fit, f2, INK, cyl, drawGrain, wave, perpendiculars, taper, trunkShape, drawSoil, drawSurfaceLife } from './oak.js';
+import { el, text, rng, fit, f2, INK, cyl, drawGrain, wave, perpendiculars, taper, trunkShape, drawSoil, drawSurfaceLife, spousesMainFirst, marriageDate } from './oak.js';
 
 const K = 6.5;          // pixels par année
 const GROUND = 440;     // le sol, sous le centre de l'éventail
@@ -56,7 +56,7 @@ function shareWidths(n, endWidth) {
 export function computeChrono(db, rootId, ancDepth, descDepth, step = 10) {
   const root = db.get(rootId);
   const desc = buildDescendants(db, rootId, descDepth);
-  const spouseId = desc.spouses[0] || null;
+  const spouseId = spousesMainFirst(db, rootId)[0] || null;
 
   // Racines : les parents de la personne et ceux de son conjoint (4 racines)
   const ancA = buildAncestors(db, rootId, ancDepth);
@@ -130,8 +130,7 @@ export function computeChrono(db, rootId, ancDepth, descDepth, step = 10) {
 }
 
 function marriageText(db, a, b) {
-  const pa = db.get(a), pb = db.get(b);
-  const date = pa?.marriageDate || pb?.marriageDate || '';
+  const date = marriageDate(db, a, b);
   return date ? `∞ ${date}` : '∞';
 }
 
@@ -309,7 +308,7 @@ function renderChrono(g, db, o) {
     const room = inner ? k.r - Math.max(parentR, 40) - 22 : 400;
     const toEnd = inner !== flip; // le texte se termine au point d'ancrage
     const anchor = { 'text-anchor': toEnd ? 'end' : 'start' };
-    const spouses = couple ? db.spousesOf(k.id) : [];
+    const spouses = couple ? spousesMainFirst(db, k.id) : [];
     let lines;
     if (spouses.length) {
       const sp = db.get(spouses[0]);
