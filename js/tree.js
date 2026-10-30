@@ -518,6 +518,13 @@ export class PanZoom {
     svg.addEventListener('pointermove', (e) => this.move(e));
     svg.addEventListener('pointerup', (e) => this.up(e));
     svg.addEventListener('pointercancel', (e) => this.up(e, true));
+    // Le « toucher » est traité au clic final : la fiche qui s'ouvre ne reçoit pas,
+    // à sa place, le clic de confirmation du téléphone (« clic fantôme »).
+    svg.addEventListener('click', () => {
+      const id = this.pendingTap;
+      this.pendingTap = null;
+      if (id) this.onTap(id);
+    });
     svg.addEventListener('wheel', (e) => {
       e.preventDefault();
       const f = Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015));
@@ -597,7 +604,7 @@ export class PanZoom {
   }
   up(e, cancel) {
     this.pointers.delete(e.pointerId);
-    if (!cancel && this.tap && this.pointers.size === 0 && this.tap.id && Date.now() - this.tap.t < 800) this.onTap(this.tap.id);
+    this.pendingTap = !cancel && this.tap && this.pointers.size === 0 && this.tap.id && Date.now() - this.tap.t < 800 ? this.tap.id : null;
     this.tap = null;
     this.prev = this.snapshot();
   }

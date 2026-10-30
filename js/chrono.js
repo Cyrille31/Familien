@@ -9,7 +9,7 @@
 // (effet de cylindre).
 
 import { buildAncestors, buildDescendants } from './tree.js';
-import { el, text, rng, fit, f2, INK, cyl, drawGrain, wave, perpendiculars, taper } from './oak.js';
+import { el, text, rng, fit, f2, INK, cyl, drawGrain, wave, perpendiculars, taper, trunkShape, drawSoil, drawSurfaceLife } from './oak.js';
 
 const K = 6.5;          // pixels par année
 const GROUND = 440;     // le sol, sous le centre de l'éventail
@@ -144,6 +144,9 @@ function renderChrono(g, db, o) {
   el('rect', { x: bbox.x + 18, y: bbox.y + 18, width: bbox.w - 36, height: bbox.h - 36, rx: 60, class: 'ch-frame' }, g);
   el('rect', { x: bbox.x + 28, y: bbox.y + 28, width: bbox.w - 56, height: bbox.h - 56, rx: 52, class: 'ch-frame thin' }, g);
 
+  // ----- Coupe du sol (sous les cercles et le bois) -----
+  drawSoil(g, { x0: bbox.x + 28, x1: bbox.x + bbox.w - 28, ground: GROUND, bottom: bbox.y + bbox.h - 28, seed: 'ch' + root.id, rx: 52 });
+
   // ----- Cercles d'années -----
   const ringG = el('g', {}, g);
   const ringLabels = el('g', {}, g);
@@ -157,7 +160,7 @@ function renderChrono(g, db, o) {
           + `L${f2(center.x + a)} ${center.y}A${f2(a)} ${f2(a)} 0 0 ${1 - sweep} ${f2(center.x - a)} ${center.y}Z`, class: 'ch-band' }, ringG);
       }
       el('path', { d: `M${f2(center.x - r1)} ${center.y}A${f2(r1)} ${f2(r1)} 0 0 ${sweep} ${f2(center.x + r1)} ${center.y}`, class: y % (step * 5) === 0 ? 'ch-ring major' : 'ch-ring' }, ringG);
-      const ly = center.y + (upper ? 18 : -8);
+      const ly = center.y + 18; // sous la ligne de sol pour les racines, libre pour la vie de surface
       text(ringLabels, center.x - r1, ly, String(y), 'ch-year', { 'text-anchor': 'middle' });
       text(ringLabels, center.x + r1, ly, String(y), 'ch-year', { 'text-anchor': 'middle' });
     });
@@ -192,14 +195,14 @@ function renderChrono(g, db, o) {
   // file droit vers l'extérieur jusqu'à son nœud.
   // `lines` : positions relatives (-0,5 … 0,5) des nervures reçues du parent ;
   // elles se prolongent toutes jusqu'au bout de la branche, sans se croiser.
-  function limb(center, r0, a0, k, w0, w1, off, lines, D) {
+  function limb(center, r0, a0, k, w0, w1, off, lines, D, minSlot) {
     const n0 = nrm(a0), d0 = { x: Math.cos(a0), y: -Math.sin(a0) }, u1 = { x: Math.cos(k.angle), y: -Math.sin(k.angle) };
     const base = P(center, r0, a0);
     const S = { x: base.x + n0.x * off, y: base.y + n0.y * off };
     const rT = Math.min(k.r, r0 + D);
     const Q = P(center, rT, k.angle);
-    // Tangentes proportionnées à la distance : virage ample, sans coude
-    const h = Math.hypot(Q.x - S.x, Q.y - S.y) * 0.42;
+    // Tangentes de même longueur pour toute la fratrie (pas de croisement), virage ample
+    const h = D * 0.5;
     const c0 = { x: S.x + d0.x * h, y: S.y + d0.y * h }, c1 = { x: Q.x - u1.x * h, y: Q.y - u1.y * h };
     const n1 = 28, n2 = k.r > rT + 1 ? 14 : 0, raw = [];
     for (let i = 0; i <= n1; i++) {
@@ -209,7 +212,10 @@ function renderChrono(g, db, o) {
     for (let i = 1; i <= n2; i++) raw.push(P(center, rT + ((k.r - rT) * i) / n2, k.angle));
     const n = raw.length - 1;
     // Axe légèrement ondulé (nul aux deux bouts : raccords parfaits)
-    const pts = wave(raw, 'b' + k.id, Math.min(6, 1 + Math.abs(k.r - r0) * 0.012) * (w0 > 5 ? 1 : 0.5));
+    // (amplitude bornée par la place angulaire de la branche : pas de croisement avec ses voisines)
+    const room = 0.22 * Math.min(k.slot, minSlot) * (r0 + k.r) / 2;
+    const pts = wave(raw, 'b' + k.id, Math.min(12, 2 + Math.abs(k.r - r0) * 0.02, room));
+    if (globalThis.__FAMILIEN_DEBUG) (globalThis.__limbs ||= []).push({ id: k.id, pts });
     const perp = perpendiculars(pts);
     const width = taper(w0, w1); // s'amincit sans à-coup : même largeur et même direction à la jonction
     const side = (u) => pts.map((p, i) => ({ x: p.x + perp[i].x * u * width(i / n), y: p.y + perp[i].y * u * width(i / n) }));
@@ -224,13 +230,14 @@ function renderChrono(g, db, o) {
   function grow(center, node, r0, a0, endW, lines, prefix) {
     const kids = [...node.kids].sort((a, b) => b.angle - a.angle);
     const D = Math.max(30, 0.8 * Math.min(...kids.map((k) => k.r - r0)));
+    const minSlot = Math.min(...kids.map((k) => k.slot));
     let acc = -endW / 2;
     kids.forEach((k, i) => {
       const lo = acc, hi = acc + k.start, pos = (lo + hi) / 2;
       acc = hi;
       const last = i === kids.length - 1;
       const mine = lines.map((u) => u * endW).filter((q) => q >= lo && (last ? q <= hi : q < hi)).map((q) => (q - pos) / k.start);
-      const res = limb(center, r0, a0, k, k.start, k.end, pos, mine.length ? mine : [0], D);
+      const res = limb(center, r0, a0, k, k.start, k.end, pos, mine.length ? mine : [0], D, minSlot);
       k.pt = res.end;
       if (k.kids.length) grow(center, k, k.r, k.angle, k.end, res.lines, prefix);
     });
@@ -238,22 +245,12 @@ function renderChrono(g, db, o) {
 
   // Tronc : du sol (largeur TB) au centre de l'éventail (largeur TW), bords verticaux aux deux bouts
   const G = GROUND;
-  const edge = (s) => `C${f2((s * TB) / 2)} ${f2(G * 0.55)} ${f2((s * TW) / 2)} ${f2(G * 0.45)} ${f2((s * TW) / 2)} 0`;
-  wood(`M${f2(-TB / 2)} ${G}${edge(-1)}L${f2(TW / 2)} 0C${f2(TW / 2)} ${f2(G * 0.45)} ${f2(TB / 2)} ${f2(G * 0.55)} ${f2(TB / 2)} ${G}Z`);
+  const trunk = trunkShape(G, 0, TB, TW, root.id);
+  wood(trunk.d);
   const trunkLines = cyl(Math.max(8, Math.floor(TW / 3.2)));
-  {
-    // Axe du tronc et demi-largeur, échantillonnés le long de son bord (courbe de Bézier)
-    const bez = (a, b, c, d, t) => (1 - t) ** 3 * a + 3 * (1 - t) ** 2 * t * b + 3 * (1 - t) * t * t * c + t ** 3 * d;
-    const n = 40, pts = [], half = [];
-    for (let i = 0; i <= n; i++) {
-      const t = i / n;
-      pts.push({ x: 0, y: bez(G, G * 0.55, G * 0.45, 0, t) });
-      half.push(bez(TB / 2, TB / 2, TW / 2, TW / 2, t));
-    }
-    const width = (t) => 2 * half[Math.round(t * n)];
-    // Deux nœuds de part et d'autre du cartouche : l'un à gauche, l'autre à droite
-    drawGrain(grainG, knotG, pts, pts.map(() => ({ x: 1, y: 0 })), width, trunkLines, trunkLines, () => 0, 'tronc', { knots: [{ t: [0.15, 0.17], u: -0.24 }, { t: [0.83, 0.85], u: 0.24 }], knotChance: 1, rho: 0.15 });
-  }
+  // Deux nœuds de part et d'autre du cartouche : l'un à gauche, l'autre à droite
+  drawGrain(grainG, knotG, trunk.pts, trunk.perp, trunk.width, trunkLines, trunkLines, () => 0, 'tronc',
+    { knots: [{ t: [0.15, 0.17], u: -0.24 }, { t: [0.83, 0.85], u: 0.24 }], knotChance: 1, rho: 0.13 });
   grow(C0, desc, 0, Math.PI / 2, TW, trunkLines, 'b');
   // Les racines partent du pied du tronc ; vu vers le bas, la gauche et la droite s'inversent
   grow(CA, anc, 0, (3 * Math.PI) / 2, TB, trunkLines.map((u) => -u), 'r');
@@ -270,6 +267,7 @@ function renderChrono(g, db, o) {
     }
   }
   el('path', { d, class: 'ch-ground' }, g);
+  drawSurfaceLife(g, { x0: bbox.x + 60, x1: bbox.x + bbox.w - 60, ground: GROUND, avoid: [[-TB / 2 - 40, TB / 2 + 40]], seed: 'ch' + root.id });
 
   // ----- Couples d'ancêtres : un trait souple les relie, avec la date de mariage -----
   const coupleG = el('g', { class: 'ch-couple' }, g);

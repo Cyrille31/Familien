@@ -79,7 +79,7 @@ export function drawGrain(lineG, knotG, pts, perp, width, from, to, mix, seed, o
     const [t0, t1] = spec.t;
     const t = t0 + r() * (t1 - t0), w = width(t), rho = opts.rho || 0.12 + r() * 0.05;
     // Le nœud doit s'estomper avant les extrémités : les raccords restent parfaits
-    const sig = Math.min(Math.max(0.02, (rho * w * 3.2) / L), Math.min(t, 1 - t) / 2.8);
+    const sig = Math.min(Math.max(0.02, (rho * w * 4.2) / L), Math.min(t, 1 - t) / 2.6);
     knots.push({ t, u: spec.u, rho, w, sig });
   }
   const shape = (u0, u1, t) => {
@@ -108,7 +108,7 @@ export function drawGrain(lineG, knotG, pts, perp, width, from, to, mix, seed, o
     const c = { x: pts[i].x + q.x * knot.u * knot.w, y: pts[i].y + q.y * knot.u * knot.w };
     const ang = (Math.atan2(-q.x, q.y) * 180) / Math.PI; // direction du bois
     const g = el('g', { transform: `translate(${f2(c.x)} ${f2(c.y)}) rotate(${f2(ang)})` }, knotG);
-    const rx = knot.sig * L * 0.95, ry = knot.rho * knot.w * 0.92;
+    const rx = knot.sig * L * 1.35, ry = knot.rho * knot.w * 0.62; // allongé dans le sens du bois
     for (const k of [1, 0.8, 0.6, 0.42]) el('ellipse', { cx: 0, cy: 0, rx: f2(rx * k), ry: f2(ry * k) }, g);
     el('ellipse', { cx: 0, cy: 0, rx: f2(rx * 0.24), ry: f2(ry * 0.26), class: 'core' }, g);
   }
@@ -132,6 +132,158 @@ export const perpendiculars = (pts) => pts.map((p, i) => {
 });
 
 export const taper = (w0, w1) => (t) => w0 + (w1 - w0) * smooth(t);
+
+// Tronc légèrement sinueux, de yBottom (largeur wB) à yTop (largeur wT). L'axe et les
+// bords sont verticaux aux deux bouts (raccords parfaits avec racines et branches).
+export function trunkShape(yBottom, yTop, wB, wT, seed) {
+  const r = rng('tronc' + seed), n = 60;
+  const A = 0.16 * wT, f = 0.8 + r() * 0.5, ph = r() * 2 * Math.PI;
+  const B = 0.06 * wT, fb = 1.5 + r() * 0.8, pb = r() * 2 * Math.PI;
+  const pts = [], half = [];
+  for (let i = 0; i <= n; i++) {
+    const t = i / n, env = Math.sin(Math.PI * t) ** 2;
+    pts.push({ x: A * Math.sin(2 * Math.PI * f * t + ph) * env, y: yBottom + (yTop - yBottom) * t });
+    half.push(wB / 2 + (wT / 2 - wB / 2) * smooth(t) + B * Math.sin(2 * Math.PI * fb * t + pb) * env);
+  }
+  const perp = perpendiculars(pts);
+  const width = (t) => 2 * half[Math.max(0, Math.min(n, Math.round(t * n)))];
+  const side = (u) => pts.map((p, i) => `${f2(p.x + perp[i].x * u * 2 * half[i])} ${f2(p.y + perp[i].y * u * 2 * half[i])}`);
+  const d = 'M' + [...side(0.5), ...side(-0.5).reverse()].join('L') + 'Z';
+  return { pts, perp, width, d };
+}
+
+// ---------- Le sol : coupe de terrain et petite vie de surface ----------
+
+// Strates de terre hachurées, cailloux et ver de terre (sous la ligne de sol).
+// `rx` : rayon des coins du cadre, pour ne pas en déborder.
+export function drawSoil(g, { x0, x1, ground, bottom, seed, skipTop = 34, rx = 0, earth = true }) {
+  const r = rng('sol' + seed);
+  const cid = 'soil-clip-' + String(seed).replace(/[^\w-]/g, '');
+  const cp = el('clipPath', { id: cid }, el('defs', {}, g));
+  el('rect', { x: x0, y: ground - 400, width: x1 - x0, height: bottom - ground + 400, rx }, cp);
+  const G = el('g', { class: 'soil', 'clip-path': `url(#${cid})` }, g);
+  if (earth) el('rect', { x: x0, y: ground, width: x1 - x0, height: bottom - ground, class: 'soil-earth' }, G);
+  // Strates : lignes ondulées avec hachures dessous
+  for (let depth = ground + skipTop + 50; depth < bottom - 30; depth += 90 + r() * 90) {
+    let d = `M${f2(x0)} ${f2(depth)}`, hatch = '';
+    for (let x = x0; x < x1; x += 60) {
+      const y1 = depth + (r() - 0.5) * 14;
+      d += `Q${f2(x + 30)} ${f2(y1)} ${f2(x + 60)} ${f2(depth + (r() - 0.5) * 6)}`;
+      for (let hx = x + 6; hx < x + 60; hx += 9 + r() * 6) hatch += `M${f2(hx)} ${f2(depth + 5 + r() * 3)}l${f2(-4 - r() * 3)} ${f2(6 + r() * 5)}`;
+    }
+    el('path', { d, class: 'soil-layer' }, G);
+    el('path', { d: hatch, class: 'soil-hatch' }, G);
+  }
+  // Cailloux
+  const n = Math.round((x1 - x0) / 55);
+  for (let i = 0; i < n; i++) {
+    const x = x0 + r() * (x1 - x0), y = ground + skipTop + 20 + r() * (bottom - ground - skipTop - 40);
+    const rx = 3 + r() * 9, ry = rx * (0.55 + r() * 0.3);
+    el('ellipse', { cx: f2(x), cy: f2(y), rx: f2(rx), ry: f2(ry), transform: `rotate(${f2((r() - 0.5) * 50)} ${f2(x)} ${f2(y)})`, class: 'soil-stone' }, G);
+  }
+  // Vers de terre
+  for (let k = 0; k < 2; k++) {
+    const x = x0 + (0.15 + r() * 0.7) * (x1 - x0), y = ground + skipTop + 40 + r() * 120;
+    let d = `M${f2(x)} ${f2(y)}`;
+    for (let j = 1; j <= 6; j++) d += `Q${f2(x + j * 9 - 4.5)} ${f2(y + (j % 2 ? -7 : 7))} ${f2(x + j * 9)} ${f2(y)}`;
+    el('path', { d, class: 'soil-worm' }, G);
+    el('path', { d, class: 'soil-worm-rings' }, G);
+  }
+}
+
+// Herbes, fleurs, fougères, champignons, un escargot et un lapin, sur la ligne de sol.
+// `avoid` : intervalles [a, b] à laisser libres (le pied du tronc).
+export function drawSurfaceLife(g, { x0, x1, ground, avoid = [], seed }) {
+  const r = rng('vie' + seed);
+  const G = el('g', { class: 'life' }, g);
+  const free = (x, w = 30) => !avoid.some(([a, b]) => x + w > a && x - w < b);
+  // Touffes d'herbe
+  for (let x = x0 + 30; x < x1 - 30; x += 16 + r() * 26) {
+    if (!free(x, 10)) continue;
+    const h = 7 + r() * 13;
+    el('path', { d: `M${f2(x)} ${ground}q${f2(-2 - r() * 3)} ${f2(-h * 0.6)} ${f2(-4 - r() * 3)} ${f2(-h)}M${f2(x + 3)} ${ground}q${f2(r() * 2)} ${f2(-h * 0.7)} ${f2(r() * 4)} ${f2(-h * 1.25)}M${f2(x + 6)} ${ground}q${f2(2 + r() * 2)} ${f2(-h * 0.5)} ${f2(3 + r() * 3)} ${f2(-h * 0.8)}`, class: 'life-grass' }, G);
+  }
+  const place = (w) => { for (let tries = 0; tries < 30; tries++) { const x = x0 + 60 + r() * (x1 - x0 - 120); if (free(x, w)) { avoid.push([x - w, x + w]); return x; } } return null; };
+  // Fleurs
+  for (let i = 0; i < Math.max(2, (x1 - x0) / 260); i++) {
+    const x = place(14); if (x === null) continue;
+    const h = 26 + r() * 22, y = ground - h, lean = (r() - 0.5) * 10;
+    el('path', { d: `M${f2(x)} ${ground}q${f2(lean)} ${f2(-h / 2)} ${f2(lean * 0.6)} ${f2(-h)}M${f2(x + lean * 0.3)} ${f2(ground - h * 0.4)}q8 -6 12 -2q-6 4 -12 2`, class: 'life-stem' }, G);
+    const cx = x + lean * 0.6;
+    for (let k = 0; k < 6; k++) {
+      const a = (k * Math.PI) / 3;
+      el('ellipse', { cx: f2(cx + Math.cos(a) * 5), cy: f2(y + Math.sin(a) * 5), rx: 4.2, ry: 2.6, transform: `rotate(${f2((a * 180) / Math.PI)} ${f2(cx + Math.cos(a) * 5)} ${f2(y + Math.sin(a) * 5)})`, class: 'life-petal' }, G);
+    }
+    el('circle', { cx: f2(cx), cy: f2(y), r: 2.6, class: 'life-heart' }, G);
+  }
+  // Fougères
+  for (let i = 0; i < Math.max(1, (x1 - x0) / 700); i++) {
+    const x = place(26); if (x === null) continue;
+    for (const side of [-1, 1]) {
+      const h = 34 + r() * 16;
+      let d = `M${f2(x)} ${ground}q${f2(side * 6)} ${f2(-h * 0.6)} ${f2(side * 18)} ${f2(-h)}`;
+      for (let j = 1; j < 6; j++) {
+        const t = j / 6, px = x + side * 18 * t * t + side * 2, py = ground - h * t;
+        d += `M${f2(px)} ${f2(py)}l${f2(side * 7 * (1 - t) + side * 2)} ${f2(-3)}M${f2(px)} ${f2(py)}l${f2(-side * 5 * (1 - t))} ${f2(-5)}`;
+      }
+      el('path', { d, class: 'life-stem' }, G);
+    }
+  }
+  // Champignons (en petits groupes)
+  for (let i = 0; i < Math.max(2, (x1 - x0) / 520); i++) {
+    const x = place(26); if (x === null) continue;
+    for (let j = 0; j < 1 + Math.round(r() * 2); j++) {
+      const mx = x + (j - 1) * 13 + r() * 4, h = 12 + r() * 12, cw = 9 + r() * 6;
+      el('path', { d: `M${f2(mx - 2.5)} ${ground}L${f2(mx - 2)} ${f2(ground - h)}L${f2(mx + 2)} ${f2(ground - h)}L${f2(mx + 2.5)} ${ground}Z`, class: 'life-mush-stem' }, G);
+      el('path', { d: `M${f2(mx - cw)} ${f2(ground - h + 1)}Q${f2(mx - cw)} ${f2(ground - h - cw * 1.1)} ${f2(mx)} ${f2(ground - h - cw * 1.05)}Q${f2(mx + cw)} ${f2(ground - h - cw * 1.1)} ${f2(mx + cw)} ${f2(ground - h + 1)}Z`, class: 'life-mush-cap' }, G);
+      for (let k = 0; k < 3; k++) el('circle', { cx: f2(mx + (k - 1) * cw * 0.45), cy: f2(ground - h - cw * (0.45 + (k % 2) * 0.25)), r: 1.4, class: 'life-spot' }, G);
+    }
+  }
+  // Escargot
+  {
+    const x = place(22);
+    if (x !== null) {
+      const y = ground - 9;
+      el('path', { d: `M${f2(x - 16)} ${ground}q4 -7 16 -6q10 1 14 6Z`, class: 'life-body' }, G);
+      el('path', { d: `M${f2(x - 14)} ${f2(ground - 4)}l-3 -8M${f2(x - 12)} ${f2(ground - 4)}l1 -9`, class: 'life-stem' }, G);
+      el('circle', { cx: f2(x + 2), cy: f2(y), r: 9, class: 'life-shell' }, G);
+      el('path', { d: `M${f2(x + 2)} ${f2(y)}m0 -2a2 2 0 1 1 -2 2a4.5 4.5 0 1 1 4.5 4.5a7 7 0 1 1 -7 -7`, class: 'life-stem' }, G);
+    }
+  }
+  // Lapin assis
+  {
+    const x = place(34);
+    if (x !== null) {
+      const flip = r() < 0.5 ? -1 : 1, b = el('g', { transform: `translate(${f2(x)} ${ground}) scale(${flip} 1)` }, G);
+      el('ellipse', { cx: -6, cy: -6, rx: 6, ry: 4, class: 'life-body' }, b); // patte
+      el('path', { d: 'M-22 0C-26 -18 -14 -30 0 -27C10 -25 14 -14 10 0Z', class: 'life-body' }, b); // corps
+      el('circle', { cx: -23, cy: -14, r: 4.5, class: 'life-tail' }, b);
+      el('ellipse', { cx: 9, cy: -30, rx: 9, ry: 7.5, class: 'life-body' }, b); // tête
+      el('ellipse', { cx: 6, cy: -46, rx: 2.8, ry: 11, transform: 'rotate(-12 6 -46)', class: 'life-body' }, b);
+      el('ellipse', { cx: 11, cy: -45, rx: 2.8, ry: 11, transform: 'rotate(8 11 -45)', class: 'life-body' }, b);
+      el('circle', { cx: 13, cy: -32, r: 1.3, class: 'life-spot' }, b);
+      el('path', { d: 'M-14 -12q4 4 9 3M-16 -20q5 2 8 0', class: 'life-stem' }, b); // traits de pelage
+    }
+  }
+}
+
+export const LIFE_STYLE = `
+  .soil-earth{fill:#e3d0a3;opacity:.35}
+  .soil-layer{fill:none;stroke:${INK};stroke-width:1;opacity:.35;stroke-dasharray:14 6}
+  .soil-hatch{fill:none;stroke:${INK};stroke-width:.7;opacity:.25}
+  .soil-stone{fill:#dccba2;stroke:${INK};stroke-width:.9;opacity:.75}
+  .soil-worm{fill:none;stroke:#b98f6a;stroke-width:4;stroke-linecap:round}
+  .soil-worm-rings{fill:none;stroke:${INK};stroke-width:4;stroke-linecap:round;stroke-dasharray:1 4;opacity:.35}
+  .life-grass,.life-stem{fill:none;stroke:${INK};stroke-width:1.1;stroke-linecap:round;opacity:.8}
+  .life-petal{fill:#f6eedb;stroke:${INK};stroke-width:.8}
+  .life-heart{fill:#d8b25a;stroke:${INK};stroke-width:.6}
+  .life-mush-stem{fill:#f3ead2;stroke:${INK};stroke-width:.9}
+  .life-mush-cap{fill:#b8664a;stroke:${INK};stroke-width:1}
+  .life-spot{fill:${INK}}
+  .life-body{fill:#e9dcc0;stroke:${INK};stroke-width:1}
+  .life-tail{fill:#f8f2e2;stroke:${INK};stroke-width:.9}
+  .life-shell{fill:#d9b98a;stroke:${INK};stroke-width:1}
+`;
 
 // Feuille de chêne lobée, centrée sur l'origine, pétiole à gauche.
 function oakLeafPath(L, H, r) {
@@ -237,6 +389,7 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
   // Fond parchemin et terre
   el('rect', { x: bbox.x, y: bbox.y, width: bbox.w, height: bbox.h, fill: 'url(#oak-paper)' }, g);
   el('rect', { x: bbox.x, y: 0, width: bbox.w, height: bbox.y + bbox.h, fill: 'url(#oak-earth)', opacity: 0.55 }, g);
+  drawSoil(g, { x0: bbox.x + 22, x1: bbox.x + bbox.w - 22, ground: 2, bottom: bbox.y + bbox.h - 22, seed: 'oak' + root.id, earth: false });
   el('rect', { x: bbox.x + 14, y: bbox.y + 14, width: bbox.w - 28, height: bbox.h - 28, fill: 'none', stroke: INK, 'stroke-width': 3, opacity: 0.7 }, g);
   el('rect', { x: bbox.x + 22, y: bbox.y + 22, width: bbox.w - 44, height: bbox.h - 44, fill: 'none', stroke: INK, 'stroke-width': 1, opacity: 0.6 }, g);
 
@@ -273,7 +426,7 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
       });
     }
     // Axe légèrement ondulé (nul aux deux bouts), amincissement sans à-coup
-    const pts = wave(raw, seed, Math.min(6, 1 + L * 0.012) * (w0 > 5 ? 1 : 0.5));
+    const pts = wave(raw, seed, Math.min(10, 2 + L * 0.018) * (w0 > 5 ? 1 : 0.6));
     const perp = perpendiculars(pts);
     const width = taper(w0, w1);
     const side = (u) => pts.map((p, i) => ({ x: p.x + perp[i].x * u * width(i / n), y: p.y + perp[i].y * u * width(i / n) }));
@@ -356,20 +509,12 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
 
   // Tronc : bords verticaux en haut et en bas, pour se prolonger dans les branches et les racines
   const base = 6;
-  wood(`M${f2(-TB / 2)} ${base}C${f2(-TB / 2)} ${f2(-T * 0.22)} ${f2(-TT / 2)} ${f2(-T * 0.55)} ${f2(-TT / 2)} ${f2(-T)}`
-    + `L${f2(TT / 2)} ${f2(-T)}C${f2(TT / 2)} ${f2(-T * 0.55)} ${f2(TB / 2)} ${f2(-T * 0.22)} ${f2(TB / 2)} ${base}Z`);
+  const trunk = trunkShape(base, -T, TB, TT, root.id);
+  wood(trunk.d);
   const trunkLines = cyl(Math.max(8, Math.floor(TT / 3.4)));
-  {
-    const bez = (a, b, c, d, t) => (1 - t) ** 3 * a + 3 * (1 - t) ** 2 * t * b + 3 * (1 - t) * t * t * c + t ** 3 * d;
-    const n = 48, pts = [], half = [];
-    for (let i = 0; i <= n; i++) {
-      const t = i / n;
-      pts.push({ x: 0, y: bez(base, -T * 0.22, -T * 0.55, -T, t) });
-      half.push(bez(TB / 2, TB / 2, TT / 2, TT / 2, t));
-    }
-    // Deux nœuds au-dessus du cartouche, l'un à gauche, l'autre à droite
-    drawGrain(hatchG, knotG, pts, pts.map(() => ({ x: 1, y: 0 })), (t) => 2 * half[Math.round(t * n)], trunkLines, trunkLines, () => 0, 'tronc', { knots: [{ t: [0.64, 0.67], u: -0.24 }, { t: [0.86, 0.88], u: 0.24 }], knotChance: 1, rho: 0.15 });
-  }
+  // Deux nœuds au-dessus du cartouche, l'un à gauche, l'autre à droite
+  drawGrain(hatchG, knotG, trunk.pts, trunk.perp, trunk.width, trunkLines, trunkLines, () => 0, 'tronc',
+    { knots: [{ t: [0.64, 0.67], u: -0.24 }, { t: [0.86, 0.88], u: 0.24 }], knotChance: 1, rho: 0.13 });
 
   // Racines (ascendants) : vers le haut des cartouches, en tendant vers le bas
   (function dirs(n) { for (const k of n.kids) { k.endDir = (S, E) => unit({ x: (E.x - S.x) * 0.5, y: Math.abs(E.y - S.y) + 40 }); dirs(k); } })(anc);
@@ -472,6 +617,7 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
     const h = 6 + r() * 12;
     el('path', { d: `M${f2(x)} 2l${f2(-3 - r() * 3)} -${f2(h)}M${f2(x + 3)} 2l${f2(r() * 4)} -${f2(h * 1.2)}M${f2(x + 6)} 2l${f2(3 + r() * 3)} -${f2(h * 0.8)}`, class: 'oak-grass' }, groundG);
   }
+  drawSurfaceLife(groundG, { x0: bbox.x + 50, x1: bbox.x + bbox.w - 50, ground: 2, avoid: [[-TB / 2 - 40, TB / 2 + 40]], seed: 'oak' + root.id });
 
   // ----- Cartouche du tronc : la personne choisie -----
   const rg = el('g', { class: 't-person oak-person', 'data-id': root.id }, g);
@@ -545,7 +691,7 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
 }
 
 // Style autonome (export en image) ; les polices sont ajoutées à l'export.
-export const OAK_STYLE = `
+export const OAK_STYLE = LIFE_STYLE + `
   .oak-canopy-edge{fill:none;stroke:${INK};stroke-width:7;stroke-dasharray:2 9;stroke-linecap:round}
   .oak-canopy-fill{fill:#e6e2b8}
   .oak-wood-edge path,.oak-wood-edge circle{fill:${INK};stroke:${INK};stroke-width:4;stroke-linejoin:round}
