@@ -12,7 +12,7 @@ import { buildAncestors, buildDescendants } from './tree.js';
 import { el, text, rng, fit, f2, INK, cyl, drawGrain, wave, perpendiculars, taper } from './oak.js';
 
 const K = 6.5;          // pixels par année
-const GROUND = 330;     // le sol, sous le centre de l'éventail
+const GROUND = 440;     // le sol, sous le centre de l'éventail
 const ARC1 = 17;        // place (le long du cercle) pour un nom seul
 const ARC2 = 46;        // place pour un couple (3 lignes)
 const GEN = 28;         // écart moyen entre générations, pour estimer une année inconnue
@@ -251,8 +251,8 @@ function renderChrono(g, db, o) {
       half.push(bez(TB / 2, TB / 2, TW / 2, TW / 2, t));
     }
     const width = (t) => 2 * half[Math.round(t * n)];
-    // Deux nœuds, de part et d'autre du cartouche
-    drawGrain(grainG, knotG, pts, pts.map(() => ({ x: 1, y: 0 })), width, trunkLines, trunkLines, () => 0, 'tronc', { knotT: [[0.12, 0.16], [0.84, 0.88]], knotChance: 1, rho: 0.07 });
+    // Deux nœuds de part et d'autre du cartouche : l'un à gauche, l'autre à droite
+    drawGrain(grainG, knotG, pts, pts.map(() => ({ x: 1, y: 0 })), width, trunkLines, trunkLines, () => 0, 'tronc', { knots: [{ t: [0.15, 0.17], u: -0.24 }, { t: [0.83, 0.85], u: 0.24 }], knotChance: 1, rho: 0.15 });
   }
   grow(C0, desc, 0, Math.PI / 2, TW, trunkLines, 'b');
   // Les racines partent du pied du tronc ; vu vers le bas, la gauche et la droite s'inversent
@@ -270,6 +270,26 @@ function renderChrono(g, db, o) {
     }
   }
   el('path', { d, class: 'ch-ground' }, g);
+
+  // ----- Couples d'ancêtres : un trait souple les relie, avec la date de mariage -----
+  const coupleG = el('g', { class: 'ch-couple' }, g);
+  const coupleLink = (a, b) => {
+    const A = P(CA, a.r, a.angle), B = P(CA, b.r, b.angle);
+    const M = { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 };
+    const len = Math.hypot(B.x - A.x, B.y - A.y);
+    const ol = Math.hypot(M.x - CA.x, M.y - CA.y) || 1, out = { x: (M.x - CA.x) / ol, y: (M.y - CA.y) / ol };
+    const C = { x: M.x + out.x * len * 0.16, y: M.y + out.y * len * 0.16 };
+    el('path', { d: `M${f2(A.x)} ${f2(A.y)}Q${f2(C.x)} ${f2(C.y)} ${f2(B.x)} ${f2(B.y)}` }, coupleG);
+    const T = { x: (A.x + 2 * C.x + B.x) / 4 + out.x * 9, y: (A.y + 2 * C.y + B.y) / 4 + out.y * 9 };
+    let rot = deg(Math.atan2(B.y - A.y, B.x - A.x));
+    if (rot > 90) rot -= 180; else if (rot < -90) rot += 180;
+    text(coupleG, 0, 0, marriageText(db, a.id, b.id), 'ch-date', { 'text-anchor': 'middle', transform: `translate(${f2(T.x)} ${f2(T.y + 3)}) rotate(${f2(rot)})` });
+  };
+  (function couples(n, top) {
+    const groups = top ? [n.kids.filter((k) => k.base === 'root'), n.kids.filter((k) => k.base === 'spouse')] : [n.kids];
+    for (const grp of groups) if (grp.length === 2) coupleLink(grp[0], grp[1]);
+    for (const k of n.kids) couples(k, false);
+  })(anc, true);
 
   // ----- Noms, dans le sens des rayons ; couples sur deux lignes -----
   const labelG = el('g', {}, g);
@@ -352,6 +372,7 @@ export const CHRONO_STYLE = `
   .ch-knot ellipse{fill:none;stroke:${INK};stroke-width:.9;opacity:.6}
   .ch-knot ellipse.core{fill:${INK};opacity:.55}
   .ch-ground{fill:none;stroke:${INK};stroke-width:2}
+  .ch-couple path{fill:none;stroke:${INK};stroke-width:1.3;opacity:.7;stroke-linecap:round}
   .ch-dot{fill:${INK}}
   .ch-person{cursor:pointer}
   .ch-person text{pointer-events:none}
