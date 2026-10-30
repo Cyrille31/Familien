@@ -216,6 +216,7 @@ function renderChrono(g, db, o) {
     const pts = wave(raw, 'b' + k.id, Math.min(12, 2 + Math.abs(k.r - r0) * 0.02, room));
     if (globalThis.__FAMILIEN_DEBUG) (globalThis.__limbs ||= []).push({ id: k.id, pts });
     const perp = perpendiculars(pts);
+    perp[0] = { x: -d0.y, y: d0.x }; // départ exactement dans l'axe du parent : rainures alignées sur les siennes
     const width = taper(w0, w1); // s'amincit sans à-coup : même largeur et même direction à la jonction
     const side = (u) => pts.map((p, i) => ({ x: p.x + perp[i].x * u * width(i / n), y: p.y + perp[i].y * u * width(i / n) }));
     wood(poly([...side(0.5), ...side(-0.5).reverse()]) + 'Z');
@@ -236,7 +237,7 @@ function renderChrono(g, db, o) {
       acc = hi;
       const last = i === kids.length - 1;
       const mine = lines.map((u) => u * endW).filter((q) => q >= lo && (last ? q <= hi : q < hi)).map((q) => (q - pos) / k.start);
-      const res = limb(center, r0, a0, k, k.start, k.end, pos, mine.length ? mine : [0], D, minSlot);
+      const res = limb(center, r0, a0, k, k.start, k.end, pos, mine, D, minSlot);
       k.pt = res.end;
       if (k.kids.length) grow(center, k, k.r, k.angle, k.end, res.lines, prefix);
     });
