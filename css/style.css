@@ -249,3 +249,7 @@ button, input, select { font: inherit; color: inherit; }
 body.relation-mode .toolbar .gen { display: none; }
 .results .small { font-size: 13px; }
 @media (max-width: 640px) { .toolbar { overflow-x: auto; } }
+.info-box.steps { margin: 12px 0; }
+.info-box.steps ol { margin: 8px 0 0; padding-left: 20px; }
+.info-box.steps li { margin-bottom: 8px; }
+.info-box.steps .btn { min-height: 38px; margin: 2px 0 4px; text-decoration: none; color: var(--text); }
