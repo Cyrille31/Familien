@@ -50,6 +50,16 @@
     </section>
 
     <div id="toolbar" class="toolbar" hidden>
+      <label class="gen" id="viewWrap" title="Mode de représentation">
+        <span>Vue</span>
+        <select id="viewSelect">
+          <option value="tree">Arbre</option>
+          <option value="mixed">Intermédiaire</option>
+          <option value="compact">Compacte</option>
+          <option value="oak">Chêne</option>
+          <option value="chrono">Chronologique</option>
+        </select>
+      </label>
       <label class="gen" title="Générations d'ascendants">
         <span><span class="long">▲ Ascendants</span><span class="short">▲ Asc.</span></span>
         <select id="ancDepth"></select>
@@ -63,13 +73,6 @@
         <select id="ringStep"><option value="5">5 ans</option><option value="10">10 ans</option><option value="20">20 ans</option><option value="25">25 ans</option></select>
       </label>
       <span class="spacer"></span>
-      <button id="btnView" class="icon-btn small" aria-label="Changer de vue" data-view="tree">
-        <svg viewBox="0 0 24 24" class="v-tree" aria-hidden="true"><circle cx="12" cy="5" r="2"/><path d="M12 7v4M6 11h12M6 11v4M18 11v4"/><circle cx="6" cy="17" r="2"/><circle cx="18" cy="17" r="2"/></svg>
-        <svg viewBox="0 0 24 24" class="v-mixed" aria-hidden="true"><circle cx="12" cy="4" r="2"/><path d="M12 6v4M6 10h12M6 10v2M18 10v10M18 14h3M18 19h3"/><circle cx="6" cy="14" r="2"/></svg>
-        <svg viewBox="0 0 24 24" class="v-oak" aria-hidden="true"><path d="M12 21v-7M12 14l-3-3M12 15l3-2M7 21h10"/><path d="M12 3c-2 0-3 1-3.5 2C6 5 5 7 5.5 8.5 4 9.5 4.5 12 6.5 12.5 7 14 9 14.5 10 13.5c1 1 3 1 4 0 1 1 3 .5 3.5-1 2-.5 2.5-3 1-4C19 7 18 5 15.5 5 15 4 14 3 12 3z"/></svg>
-        <svg viewBox="0 0 24 24" class="v-chrono" aria-hidden="true"><path d="M3 20a9 9 0 0 1 18 0M6.5 20a5.5 5.5 0 0 1 11 0M10 20a2 2 0 0 1 4 0M12 20V9M12 14l-4-3M12 12l4-4"/></svg>
-        <svg viewBox="0 0 24 24" class="v-compact" aria-hidden="true"><path d="M4 5h9M8 10h9M12 15h8M12 20h8M8 10v10M4 5v5"/></svg>
-      </button>
       <button id="zoomOut" class="icon-btn small" aria-label="Dézoomer">−</button>
       <button id="zoomFit" class="icon-btn small" aria-label="Voir tout l'arbre" title="Voir tout l'arbre">⤢</button>
       <button id="zoomIn" class="icon-btn small" aria-label="Zoomer">+</button>

@@ -9,7 +9,7 @@ import { findRelation } from './relation.js';
 import { computeOak, exportOakSvg, OAK_STYLE } from './oak.js';
 import { computeChrono, CHRONO_STYLE } from './chrono.js';
 
-const APP_VERSION = '1.7.0';
+const APP_VERSION = '1.8.0';
 // Fichier de la famille proposé par défaut au premier lancement
 const DEFAULT_URL = 'https://docs.google.com/spreadsheets/d/1GVpEFBoonQ2M5ZG7dK4_bNW2w1BkZXE9ZupN6cHlXYM/edit';
 // Identifiant client Google (OAuth) pour lire le fichier privé avec son compte Google.
@@ -216,11 +216,11 @@ document.head.appendChild(Object.assign(document.createElement('style'), { textC
 const pz = new PanZoom(svg, viewport, (id) => (state.pickFrom ? showRelation(state.pickFrom, id) : showPerson(id)));
 
 const VIEWS = {
-  tree: { label: 'Vue en arbre', next: 'mixed' },
-  mixed: { label: 'Vue intermédiaire : enfants sans descendants en colonne, parents resserrés', next: 'compact' },
-  compact: { label: 'Vue compacte : descendants en liste, ancêtres en escalier', next: 'oak' },
-  oak: { label: 'Vue « chêne » : ancêtres dans les racines, descendants dans les branches et les feuilles', next: 'chrono' },
-  chrono: { label: 'Vue chronologique : cercles d’années, les cousins nés la même année sur le même cercle', next: 'tree' },
+  tree: { label: 'Vue en arbre' },
+  mixed: { label: 'Vue intermédiaire : enfants sans descendants en colonne, parents resserrés' },
+  compact: { label: 'Vue compacte : descendants en liste, ancêtres en escalier' },
+  oak: { label: 'Vue « chêne » : ancêtres dans les racines, descendants dans les branches et les feuilles' },
+  chrono: { label: 'Vue chronologique : cercles d’années, les cousins nés la même année sur le même cercle' },
 };
 
 function renderTree(fit) {
@@ -601,14 +601,12 @@ function setView(view) {
   if (!VIEWS[view]) view = 'tree';
   state.view = view;
   prefs.set('view', view);
-  const btn = $('btnView');
-  btn.dataset.view = view;
-  btn.classList.toggle('active', view !== 'tree');
-  btn.title = `${VIEWS[view].label} (toucher pour changer)`;
+  $('viewSelect').value = view;
+  $('viewSelect').title = VIEWS[view].label;
   $('ringStepWrap').hidden = view !== 'chrono';
 }
-$('btnView').onclick = () => {
-  setView(VIEWS[state.view].next);
+$('viewSelect').onchange = (e) => {
+  setView(e.target.value);
   renderTree(true);
   toast(VIEWS[state.view].label + '.', { duration: 2500 });
 };

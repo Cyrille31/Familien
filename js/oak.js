@@ -123,6 +123,8 @@ export function computeOak(db, rootId, ancDepth, descDepth) {
 
   // Racines : ascendants resserrés sous le tronc
   const anc = buildAncestors(db, rootId, ancDepth);
+  const spouseId = db.spousesOf(rootId)[0];
+  if (spouseId) anc.kids.push(...buildAncestors(db, spouseId, ancDepth).kids);
   layoutAncestorsClose(anc);
   (function place(n) {
     n.y = n.depth === 0 ? 0 : 70 + (n.depth - 1) * DOWN + 22 * Math.pow(Math.min(1, Math.abs(n.x) / 900), 2);
@@ -243,7 +245,7 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
   (function drawRoots(n, from, wFrom) {
     n.kids.forEach((k, i) => {
       const r = rng('r' + k.id);
-      const start = n.depth === 0 ? { x: (i ? 1 : -1) * 34 * tw, y: -6 } : from;
+      const start = n.depth === 0 ? { x: (n.kids.length > 1 ? (i / (n.kids.length - 1)) * 2 - 1 : 0) * 40 * tw, y: -6 } : from;
       const end = { x: k.x, y: k.y - 26 };
       const w1 = rootWidth(k);
       const c0 = { x: start.x + (end.x - start.x) * 0.15, y: start.y + (end.y - start.y) * (0.55 + r() * 0.2) };
@@ -366,12 +368,22 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
   // ----- Cartouche du tronc : la personne choisie -----
   const rg = el('g', { class: 't-person oak-person', 'data-id': root.id }, g);
   const cy = -T * 0.42;
-  el('path', { d: `M-128 ${cy - 52}h256c-10 18 -10 86 0 104h-256c10 -18 10 -86 0 -104Z`, class: 'oak-plaque' }, rg);
-  el('path', { d: `M-118 ${cy - 44}h236c-8 16 -8 72 0 88h-236c8 -16 8 -72 0 -88Z`, class: 'oak-plaque-inner' }, rg);
-  text(rg, 0, cy - 8, fit(root.name, 22), 'oak-script', { 'text-anchor': 'middle' });
-  text(rg, 0, cy + 18, lifeSpan(root), 'oak-italic', { 'text-anchor': 'middle' });
-  const sp = spouseLine(db, db.spousesOf(root.id));
-  if (sp) text(rg, 0, cy + 38, fit(sp, 34), 'oak-small', { 'text-anchor': 'middle' });
+  const spId = db.spousesOf(root.id)[0];
+  const ph = spId ? 160 : 104;
+  el('path', { d: `M-128 ${cy - ph / 2}h256c-10 18 -10 ${ph - 18} 0 ${ph}h-256c10 -18 10 ${-(ph - 18)} 0 ${-ph}Z`, class: 'oak-plaque' }, rg);
+  el('path', { d: `M-118 ${cy - ph / 2 + 8}h236c-8 16 -8 ${ph - 32} 0 ${ph - 16}h-236c8 -16 8 ${-(ph - 32)} 0 ${-(ph - 16)}Z`, class: 'oak-plaque-inner' }, rg);
+  // Le couple : le descendant au-dessus, la date de mariage, puis le conjoint
+  const top = spId ? cy - 40 : cy - 8;
+  text(rg, 0, top, fit(root.name, 22), 'oak-script', { 'text-anchor': 'middle' });
+  text(rg, 0, top + 22, lifeSpan(root), 'oak-italic', { 'text-anchor': 'middle' });
+  if (spId) {
+    const sp = db.get(spId);
+    text(rg, 0, cy + 14, marriage(root.id, spId), 'oak-italic', { 'text-anchor': 'middle' });
+    const sg = el('g', { class: 't-person oak-person', 'data-id': spId }, g);
+    el('rect', { x: -120, y: cy + 22, width: 240, height: 54, fill: 'transparent' }, sg);
+    text(sg, 0, cy + 46, fit(sp.name, 22), 'oak-script', { 'text-anchor': 'middle' });
+    text(sg, 0, cy + 68, lifeSpan(sp), 'oak-small', { 'text-anchor': 'middle' });
+  }
 
   // ----- Titre -----
   const title = root.lastName ? `Famille ${root.lastName}` : 'Arbre de famille';
@@ -387,6 +399,11 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
     el('rect', { x: x - LEAF_L / 2, y: y - LEAF_H / 2, width: LEAF_L, height: LEAF_H, fill: 'transparent' }, grp);
   }
 
+  function marriage(a, b) {
+    const date = db.get(a)?.marriageDate || db.get(b)?.marriageDate;
+    return date ? `∞ ${date}` : '∞';
+  }
+
   function ribbon(grp, x, y, p, spouses) {
     const name = fit(p.name, 22);
     const w = Math.max(110, Math.min(200, name.length * 8.6 + 34));
@@ -398,7 +415,7 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
     el('path', { d: `M${l} ${t}Q${x} ${t - 7} ${l + w} ${t}v${h}Q${x} ${t + h - 7} ${l} ${t + h}Z`, class: 'oak-ribbon' }, grp);
     el('rect', { x: l - 16, y: t - 8, width: w + 32, height: h + 50, fill: 'transparent' }, grp);
     text(grp, x, y + 2, name, 'oak-name', { 'text-anchor': 'middle' });
-    const sub = [lifeSpan(p), fit(spouseLine(db, spouses), 28)].filter(Boolean);
+    const sub = [lifeSpan(p), ...(spouses.length ? [marriage(p.id, spouses[0]), fit(db.get(spouses[0]).name + (spouses.length > 1 ? ` (+${spouses.length - 1})` : ''), 28)] : [])];
     sub.forEach((s, i) => text(grp, x, y + 30 + i * 15, s, 'oak-small oak-halo', { 'text-anchor': 'middle' }));
   }
 
