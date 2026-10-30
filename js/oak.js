@@ -83,8 +83,8 @@ export function drawGrain(lineG, knotG, pts, perp, width, from, to, mix, seed, o
     knots.push({ t, u: spec.u, rho, w, sig });
   }
   // Avec un nœud, le tracé est rééchantillonné finement pour que les rainures épousent ses cernes
-  if (knots.length && n < 400) {
-    const m = 400, P = [], Q = [];
+  if (knots.length && n < 1200) {
+    const m = 1200, P = [], Q = [];
     for (let i = 0; i <= m; i++) {
       const x = (i / m) * n, a = Math.floor(x), b = Math.min(n, a + 1), f = x - a;
       P.push({ x: pts[a].x + (pts[b].x - pts[a].x) * f, y: pts[a].y + (pts[b].y - pts[a].y) * f });
@@ -99,9 +99,18 @@ export function drawGrain(lineG, knotG, pts, perp, width, from, to, mix, seed, o
     return u + A * Math.sin(2 * Math.PI * freq * t + ph) * Math.sin(Math.PI * t) * (1 - 4 * u * u);
   };
   // Écart imposé par un nœud à l'abscisse t (en fraction de largeur) : les cernes suivent la même courbe
-  // Profil arrondi (exp(-x⁴)) : un nœud ovale, et des rainures qui s'infléchissent en douceur
-  const prof = (x) => Math.exp(-(x ** 4));
-  const gap = (knot, t) => knot.rho * prof((t - knot.t) / knot.sig);
+  // Nœud : cernes elliptiques de demi-axes a (le long du bois, en t) et b (en travers, en u).
+  // Les rainures contournent l'ellipse agrandie d'une marge m : à distance régulière des cernes.
+  for (const knot of knots) {
+    knot.b = knot.rho * 0.7;
+    knot.a = knot.sig * 1.35;
+    const m = knot.rho * 0.3; // marge, en fraction de largeur
+    knot.B = knot.b + m;
+    knot.A = knot.a * 1.22;
+  }
+  // Profil B·(1 − x²)^0,7 : reste à ~m de l'ellipse sur toute sa longueur, et s'annule en douceur
+  // (aucun coude dans les rainures voisines, seule la rainure axiale se resserre en pointe)
+  const gap = (knot, t) => { const x = (t - knot.t) / knot.A; return x * x < 1 ? knot.B * (1 - x * x) ** 0.7 : 0; };
   const shape = (u0, u1, t, sides) => {
     let u = base(u0, u1, t);
     knots.forEach((knot, k) => {
@@ -126,21 +135,25 @@ export function drawGrain(lineG, knotG, pts, perp, width, from, to, mix, seed, o
   // Cernes : courbes de même forme que l'écart des rainures, un peu en retrait (elles ne touchent pas)
   for (const knot of knots) {
     const g = el('g', {}, knotG);
-    const at = (t, v) => { const i = Math.round(t * N), w = width(t), u = knot.u + v; return `${f2(pts[i].x + perp[i].x * u * w)} ${f2(pts[i].y + perp[i].y * u * w)}`; };
-    // Cerne k : même profil, plus étroit et plus court, refermé en pointe douce à ses deux bouts
-    const e = 0.05, X = Math.log(1 / e) ** 0.25;
-    const ring = (k, cls) => {
-      const sk = knot.sig * (0.55 + 0.45 * k);
-      const top = [], bot = [];
-      const i0 = Math.ceil((knot.t - X * sk) * N), i1 = Math.floor((knot.t + X * sk) * N);
-      for (let i = Math.max(1, i0); i <= Math.min(N - 1, i1); i++) {
-        const t = i / N, c = k * knot.rho * Math.max(0, (prof((t - knot.t) / sk) - e) / (1 - e));
-        top.push(at(t, -c)); bot.push(at(t, c));
-      }
-      el('path', { d: 'M' + [...top, ...bot.reverse()].join('L') + 'Z', ...(cls ? { class: cls } : {}) }, g);
+    // Point du bois en (t, décalage v), interpolé entre les échantillons
+    const atC = (t, v) => {
+      const x = t * N, i = Math.min(N - 1, Math.max(0, Math.floor(x))), f = x - i;
+      const px = pts[i].x + (pts[i + 1].x - pts[i].x) * f, py = pts[i].y + (pts[i + 1].y - pts[i].y) * f;
+      const qx = perp[i].x + (perp[i + 1].x - perp[i].x) * f, qy = perp[i].y + (perp[i + 1].y - perp[i].y) * f;
+      const u = knot.u + v, w = width(t);
+      return `${f2(px + qx * u * w)} ${f2(py + qy * u * w)}`;
     };
-    for (const k of [0.88, 0.7, 0.52, 0.36]) ring(k);
-    ring(0.2, 'core');
+    // Cerne k : ellipse homothétique (k × a, k × b), qui suit la courbure du bois
+    const ring = (k, cls) => {
+      const P = [];
+      for (let j = 0; j < 72; j++) {
+        const th = (j / 72) * 2 * Math.PI;
+        P.push(atC(knot.t + knot.a * k * Math.cos(th), knot.b * k * Math.sin(th)));
+      }
+      el('path', { d: 'M' + P.join('L') + 'Z', ...(cls ? { class: cls } : {}) }, g);
+    };
+    for (const k of [1, 0.8, 0.6, 0.42]) ring(k);
+    ring(0.24, 'core');
   }
 }
 
@@ -705,8 +718,12 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
   function label(grp, x, y, p, spouses) {
     const lines = [fit(p.name, 22), lifeSpan(p), fit(spouseLine(db, spouses), 26)].filter(Boolean);
     const top = y - (lines.length - 1) * 8 + 4;
-    lines.forEach((s, i) => text(grp, x, top + i * 16, s, i === 0 ? 'oak-name' : 'oak-small', { 'text-anchor': 'middle' }));
     el('rect', { x: x - LEAF_L / 2, y: y - LEAF_H / 2, width: LEAF_L, height: LEAF_H, fill: 'transparent' }, grp);
+    lines.forEach((s, i) => {
+      // La ligne du conjoint ouvre la fiche du conjoint
+      const into = i === 2 ? spouseGroup(grp, spouses[0], x, top + i * 16, s.length * 6.5) : grp;
+      text(into, x, top + i * 16, s, i === 0 ? 'oak-name' : 'oak-small', { 'text-anchor': 'middle' });
+    });
   }
 
   function marriage(a, b) {
@@ -726,7 +743,17 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
     el('rect', { x: l - 16, y: t - 8, width: w + 32, height: h + 50, fill: 'transparent' }, grp);
     text(grp, x, y + 2, name, 'oak-name', { 'text-anchor': 'middle' });
     const sub = [lifeSpan(p), ...(spouses.length ? [marriage(p.id, spouses[0]), fit(db.get(spouses[0]).name + (spouses.length > 1 ? ` (+${spouses.length - 1})` : ''), 28)] : [])];
-    sub.forEach((s, i) => text(grp, x, y + 30 + i * 15, s, 'oak-small oak-halo', { 'text-anchor': 'middle' }));
+    sub.forEach((s, i) => {
+      const into = i === 2 ? spouseGroup(grp, spouses[0], x, y + 30 + i * 15, s.length * 6.5) : grp;
+      text(into, x, y + 30 + i * 15, s, 'oak-small oak-halo', { 'text-anchor': 'middle' });
+    });
+  }
+
+  // Groupe cliquable propre au conjoint, à l'intérieur de l'étiquette du descendant
+  function spouseGroup(grp, id, x, y, w) {
+    const sg = el('g', { class: 't-person oak-person', 'data-id': id }, grp);
+    el('rect', { x: x - w / 2 - 6, y: y - 12, width: w + 12, height: 16, fill: 'transparent' }, sg);
+    return sg;
   }
 
   function cartouche(grp, x, y, p, more) {
