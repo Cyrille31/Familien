@@ -54,6 +54,81 @@ function spouseLine(db, ids) {
   return names.length ? '∞ ' + names.join(', ') : '';
 }
 
+// Nervures réparties comme sur un cylindre vu de face : jusqu'aux bords, et plus
+// serrées sur les bords qu'au centre.
+export const cyl = (m) => Array.from({ length: m }, (_, j) => 0.5 * Math.sin(-Math.PI / 2 + (Math.PI * (j + 0.5)) / m));
+const smooth = (t) => t * t * (3 - 2 * t);
+
+// Nervures d'une pièce de bois (tronc, branche ou racine) décrite par son axe `pts`,
+// ses perpendiculaires `perp` et sa largeur `width(t)`. Chaque nervure passe de la
+// position `from[j]` à `to[j]` (positions relatives, -0,5 … 0,5) selon `mix(t)`.
+// Ondulations douces (nulles aux extrémités, pour des raccords parfaits) et, sur le
+// bois épais, un nœud à cernes que les nervures contournent. Aucune nervure ne
+// croise sa voisine : chaque déformation conserve leur ordre.
+export function drawGrain(lineG, knotG, pts, perp, width, from, to, mix, seed, opts = {}) {
+  const n = pts.length - 1, r = rng('g' + seed);
+  let L = 0;
+  for (let i = 1; i <= n; i++) L += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+  const A = 0.045, freq = 1 + r() * 1.8, ph = r() * 2 * Math.PI;
+  const knots = [];
+  for (const [t0, t1] of opts.knotT || [[0.3, 0.75]]) {
+    if (Math.min(width(0), width(1)) < (opts.knotMin || 18) || L < 110 || r() >= (opts.knotChance ?? 0.5)) continue;
+    const t = t0 + r() * (t1 - t0), w = width(t), rho = opts.rho || 0.09 + r() * 0.05;
+    // Le nœud doit s'estomper avant les extrémités : les raccords restent parfaits
+    const sig = Math.min(Math.max(0.02, (rho * w * 2.6) / L), Math.min(t, 1 - t) / 2.8);
+    knots.push({ t, u: (r() - 0.5) * 0.34, rho, w, sig });
+  }
+  const shape = (u0, u1, t) => {
+    let u = u0 + (u1 - u0) * mix(t);
+    u += A * Math.sin(2 * Math.PI * freq * t + ph) * Math.sin(Math.PI * t) * (1 - 4 * u * u);
+    for (const knot of knots) {
+      const c = knot.rho * Math.exp(-(((t - knot.t) / knot.sig) ** 2));
+      const d = u - knot.u;
+      u = knot.u + (d < 0 ? -1 : 1) * Math.sqrt(d * d + c * c);
+    }
+    return Math.max(-0.497, Math.min(0.497, u));
+  };
+  from.forEach((u0, j) => {
+    const q = pts.map((p, i) => {
+      const t = i / n, u = shape(u0, to[j], t), w = width(t);
+      return { x: p.x + perp[i].x * u * w, y: p.y + perp[i].y * u * w };
+    });
+    // Prolongée d'un pixel à chaque bout : se superpose à la nervure voisine (tronc ↔ branche)
+    const ext = (a, b) => { const l = Math.hypot(a.x - b.x, a.y - b.y) || 1; return { x: a.x + (a.x - b.x) / l, y: a.y + (a.y - b.y) / l }; };
+    q.unshift(ext(q[0], q[1]));
+    q.push(ext(q[q.length - 1], q[q.length - 2]));
+    el('path', { d: 'M' + q.map((p) => `${f2(p.x)} ${f2(p.y)}`).join('L') }, lineG);
+  });
+  for (const knot of knots) {
+    const i = Math.round(knot.t * n), q = perp[i];
+    const c = { x: pts[i].x + q.x * knot.u * knot.w, y: pts[i].y + q.y * knot.u * knot.w };
+    const ang = (Math.atan2(-q.x, q.y) * 180) / Math.PI; // direction du bois
+    const g = el('g', { transform: `translate(${f2(c.x)} ${f2(c.y)}) rotate(${f2(ang)})` }, knotG);
+    const rx = knot.sig * L * 0.95, ry = knot.rho * knot.w * 0.9;
+    for (const k of [1, 0.72, 0.46]) el('ellipse', { cx: 0, cy: 0, rx: f2(rx * k), ry: f2(ry * k) }, g);
+    el('ellipse', { cx: 0, cy: 0, rx: f2(rx * 0.2), ry: f2(ry * 0.22), class: 'core' }, g);
+  }
+}
+
+// Ondulation douce de l'axe d'une branche, nulle (et à pente nulle) aux deux bouts.
+export function wave(pts, seed, amp) {
+  const n = pts.length - 1, r = rng('w' + seed), f = 1 + r() * 1.5, ph = r() * 2 * Math.PI;
+  return pts.map((p, i) => {
+    const q = pts[Math.min(i + 1, n)], s = pts[Math.max(i - 1, 0)];
+    const dx = q.x - s.x, dy = q.y - s.y, len = Math.hypot(dx, dy) || 1, t = i / n;
+    const a = amp * Math.sin(2 * Math.PI * f * t + ph) * Math.sin(Math.PI * t) ** 2;
+    return { x: p.x - (dy / len) * a, y: p.y + (dx / len) * a };
+  });
+}
+
+export const perpendiculars = (pts) => pts.map((p, i) => {
+  const n = pts.length - 1, q = pts[Math.min(i + 1, n)], s = pts[Math.max(i - 1, 0)];
+  const dx = q.x - s.x, dy = q.y - s.y, len = Math.hypot(dx, dy) || 1;
+  return { x: -dy / len, y: dx / len };
+});
+
+export const taper = (w0, w1) => (t) => w0 + (w1 - w0) * smooth(t);
+
 // Feuille de chêne lobée, centrée sur l'origine, pétiole à gauche.
 function oakLeafPath(L, H, r) {
   const n = 64, lobes = 4 + Math.round(r() * 1.5);
@@ -166,16 +241,16 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
   const edgeG = el('g', { class: 'oak-wood-edge' }, g);
   const woodG = el('g', { class: 'oak-wood' }, g);
   const hatchG = el('g', { class: 'oak-hatch' }, g);
+  const knotG = el('g', { class: 'oak-knot' }, g);
   const leafG = el('g', {}, g);
   const labelG = el('g', {}, g);
 
+  // (le remplissage a un liseré de sa couleur : il recouvre les coutures entre pièces voisines)
   const wood = (d) => { el('path', { d }, edgeG); el('path', { d }, woodG); };
   const poly = (pts) => 'M' + pts.map((p) => `${f2(p.x)} ${f2(p.y)}`).join('L');
   const unit = (v) => { const l = Math.hypot(v.x, v.y) || 1; return { x: v.x / l, y: v.y / l }; };
   const perpOf = (d) => ({ x: -d.y, y: d.x });
   const ss = (t) => t * t * (3 - 2 * t);
-  // Nervures réparties comme sur un cylindre : plus serrées sur les bords
-  const cyl = (m) => Array.from({ length: m }, (_, j) => 0.46 * Math.sin(-Math.PI / 2 + (Math.PI * (j + 0.5)) / m));
 
   // Une pièce de bois de S à E : part dans la direction d0 (celle du parent), arrive
   // dans la direction d1 ; largeur w0 → w1 ; `lines` = nervures reçues du parent.
@@ -184,28 +259,24 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
     const L = Math.hypot(E.x - S.x, E.y - S.y);
     const c0 = { x: S.x + d0.x * L * (0.4 + r() * 0.1), y: S.y + d0.y * L * (0.4 + r() * 0.1) };
     const c1 = { x: E.x - d1.x * L * 0.35, y: E.y - d1.y * L * 0.35 };
-    const n = 28, pts = [], tan = [];
+    const n = 36, raw = [];
     for (let i = 0; i <= n; i++) {
       const t = i / n, u = 1 - t;
-      pts.push({
+      raw.push({
         x: u * u * u * S.x + 3 * u * u * t * c0.x + 3 * u * t * t * c1.x + t * t * t * E.x,
         y: u * u * u * S.y + 3 * u * u * t * c0.y + 3 * u * t * t * c1.y + t * t * t * E.y,
       });
-      tan.push(unit({
-        x: 3 * u * u * (c0.x - S.x) + 6 * u * t * (c1.x - c0.x) + 3 * t * t * (E.x - c1.x),
-        y: 3 * u * u * (c0.y - S.y) + 6 * u * t * (c1.y - c0.y) + 3 * t * t * (E.y - c1.y),
-      }));
     }
-    const width = (t) => w0 + (w1 - w0) * Math.pow(t, 0.8);
-    const at = (i, u) => { const q = perpOf(tan[i]), w = width(i / n); return { x: pts[i].x + q.x * u * w, y: pts[i].y + q.y * u * w }; };
-    const left = pts.map((_, i) => at(i, 0.5)), right = pts.map((_, i) => at(i, -0.5));
-    wood(poly([...left, ...right.reverse()]) + 'Z');
+    // Axe légèrement ondulé (nul aux deux bouts), amincissement sans à-coup
+    const pts = wave(raw, seed, Math.min(6, 1 + L * 0.012) * (w0 > 5 ? 1 : 0.5));
+    const perp = perpendiculars(pts);
+    const width = taper(w0, w1);
+    const side = (u) => pts.map((p, i) => ({ x: p.x + perp[i].x * u * width(i / n), y: p.y + perp[i].y * u * width(i / n) }));
+    wood(poly([...side(0.5), ...side(-0.5).reverse()]) + 'Z');
     // Toutes les nervures reçues se prolongent, dans l'ordre (aucun croisement)
     const keep = [...lines].sort((x, y) => x - y);
     const target = cyl(keep.length);
-    keep.forEach((u0, j) => {
-      el('path', { d: poly(pts.map((_, i) => at(i, u0 + (target[j] - u0) * ss(Math.min(1, i / n / 0.45))))) }, hatchG);
-    });
+    drawGrain(hatchG, knotG, pts, perp, width, keep, target, (t) => ss(Math.min(1, t / 0.45)), seed);
     return { lines: target };
   }
 
@@ -280,13 +351,19 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
 
   // Tronc : bords verticaux en haut et en bas, pour se prolonger dans les branches et les racines
   const base = 6;
-  // (dépasse de quelques pixels dans les branches et les racines : aucune couture visible)
-  wood(`M${f2(-TB / 2)} ${base + 8}L${f2(-TB / 2)} ${base}C${f2(-TB / 2)} ${f2(-T * 0.22)} ${f2(-TT / 2)} ${f2(-T * 0.55)} ${f2(-TT / 2)} ${f2(-T)}`
-    + `L${f2(-TT / 2)} ${f2(-T - 8)}L${f2(TT / 2)} ${f2(-T - 8)}L${f2(TT / 2)} ${f2(-T)}`
-    + `C${f2(TT / 2)} ${f2(-T * 0.55)} ${f2(TB / 2)} ${f2(-T * 0.22)} ${f2(TB / 2)} ${base}L${f2(TB / 2)} ${base + 8}Z`);
+  wood(`M${f2(-TB / 2)} ${base}C${f2(-TB / 2)} ${f2(-T * 0.22)} ${f2(-TT / 2)} ${f2(-T * 0.55)} ${f2(-TT / 2)} ${f2(-T)}`
+    + `L${f2(TT / 2)} ${f2(-T)}C${f2(TT / 2)} ${f2(-T * 0.55)} ${f2(TB / 2)} ${f2(-T * 0.22)} ${f2(TB / 2)} ${base}Z`);
   const trunkLines = cyl(Math.max(8, Math.floor(TT / 3.4)));
-  for (const u of trunkLines) {
-    el('path', { d: `M${f2(u * TB)} ${base}C${f2(u * TB)} ${f2(-T * 0.22)} ${f2(u * TT)} ${f2(-T * 0.55)} ${f2(u * TT)} ${f2(-T)}`, class: 'oak-bark-line' }, hatchG);
+  {
+    const bez = (a, b, c, d, t) => (1 - t) ** 3 * a + 3 * (1 - t) ** 2 * t * b + 3 * (1 - t) * t * t * c + t ** 3 * d;
+    const n = 48, pts = [], half = [];
+    for (let i = 0; i <= n; i++) {
+      const t = i / n;
+      pts.push({ x: 0, y: bez(base, -T * 0.22, -T * 0.55, -T, t) });
+      half.push(bez(TB / 2, TB / 2, TT / 2, TT / 2, t));
+    }
+    // Un nœud au-dessus du cartouche
+    drawGrain(hatchG, knotG, pts, pts.map(() => ({ x: 1, y: 0 })), (t) => 2 * half[Math.round(t * n)], trunkLines, trunkLines, () => 0, 'tronc', { knotT: [[0.72, 0.8]], knotChance: 1, rho: 0.07 });
   }
 
   // Racines (ascendants) : vers le haut des cartouches, en tendant vers le bas
@@ -453,10 +530,12 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
 export const OAK_STYLE = `
   .oak-canopy-edge{fill:none;stroke:${INK};stroke-width:7;stroke-dasharray:2 9;stroke-linecap:round}
   .oak-canopy-fill{fill:#e6e2b8}
-  .oak-wood-edge path,.oak-wood-edge circle{fill:${INK};stroke:${INK};stroke-width:3.2;stroke-linejoin:round}
-  .oak-wood path,.oak-wood circle{fill:#d8c197;stroke:none}
-  .oak-hatch path{fill:none;stroke:${INK};stroke-width:.9;opacity:.55;stroke-linecap:round}
-  .oak-hatch .oak-rootlet{stroke-width:1.2;opacity:.7}
+  .oak-wood-edge path,.oak-wood-edge circle{fill:${INK};stroke:${INK};stroke-width:4;stroke-linejoin:round}
+  .oak-wood path,.oak-wood circle{fill:#d8c197;stroke:#d8c197;stroke-width:1.4;stroke-linejoin:round}
+  .oak-knot ellipse{fill:none;stroke:${INK};stroke-width:.9;opacity:.6}
+  .oak-knot ellipse.core{fill:${INK};opacity:.55}
+  .oak-hatch path{fill:none;stroke:#8f7a5a;stroke-width:.8;stroke-linecap:butt;stroke-linejoin:round}
+  .oak-hatch .oak-rootlet{stroke:${INK};stroke-width:1.2;opacity:.7;stroke-linecap:round}
   .oak-hatch .oak-bark-line{stroke-width:1.1;opacity:.5}
   .oak-leaf{fill:url(#oak-leaf);stroke:${INK};stroke-width:1.3;stroke-linejoin:round}
   .oak-vein{fill:none;stroke:${INK};stroke-width:.7;opacity:.45}
