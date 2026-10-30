@@ -7,8 +7,9 @@ import { fileToCsv } from './importers.js';
 import { computeTree, computeCompactTree, computePathTree, renderInto, exportSvgString, PanZoom } from './tree.js';
 import { findRelation } from './relation.js';
 import { computeOak, exportOakSvg, OAK_STYLE } from './oak.js';
+import { computeChrono, CHRONO_STYLE } from './chrono.js';
 
-const APP_VERSION = '1.6.0';
+const APP_VERSION = '1.7.0';
 // Fichier de la famille proposé par défaut au premier lancement
 const DEFAULT_URL = 'https://docs.google.com/spreadsheets/d/1GVpEFBoonQ2M5ZG7dK4_bNW2w1BkZXE9ZupN6cHlXYM/edit';
 // Identifiant client Google (OAuth) pour lire le fichier privé avec son compte Google.
@@ -210,7 +211,7 @@ async function checkForUpdate({ silent = false } = {}) {
 
 const svg = $('treeSvg');
 const viewport = $('viewport');
-document.head.appendChild(Object.assign(document.createElement('style'), { textContent: OAK_STYLE }));
+document.head.appendChild(Object.assign(document.createElement('style'), { textContent: OAK_STYLE + CHRONO_STYLE }));
 
 const pz = new PanZoom(svg, viewport, (id) => (state.pickFrom ? showRelation(state.pickFrom, id) : showPerson(id)));
 
@@ -218,7 +219,8 @@ const VIEWS = {
   tree: { label: 'Vue en arbre', next: 'mixed' },
   mixed: { label: 'Vue intermédiaire : enfants sans descendants en colonne, parents resserrés', next: 'compact' },
   compact: { label: 'Vue compacte : descendants en liste, ancêtres en escalier', next: 'oak' },
-  oak: { label: 'Vue « chêne » : ancêtres dans les racines, descendants dans les branches et les feuilles', next: 'tree' },
+  oak: { label: 'Vue « chêne » : ancêtres dans les racines, descendants dans les branches et les feuilles', next: 'chrono' },
+  chrono: { label: 'Vue chronologique : cercles d’années, les cousins nés la même année sur le même cercle', next: 'tree' },
 };
 
 function renderTree(fit) {
@@ -233,6 +235,7 @@ function renderTree(fit) {
   if (!has) { viewport.textContent = ''; renderEmpty(); return; }
   state.tree = state.view === 'compact' ? computeCompactTree(state.db, state.rootId, state.ancDepth, state.descDepth)
     : state.view === 'oak' ? computeOak(state.db, state.rootId, state.ancDepth, state.descDepth)
+    : state.view === 'chrono' ? computeChrono(state.db, state.rootId, state.ancDepth, state.descDepth, state.ringStep)
       : computeTree(state.db, state.rootId, state.ancDepth, state.descDepth, { mixed: state.view === 'mixed' });
   renderInto(viewport, state.db, state.tree);
   const p = state.db.get(state.rootId);
@@ -602,6 +605,7 @@ function setView(view) {
   btn.dataset.view = view;
   btn.classList.toggle('active', view !== 'tree');
   btn.title = `${VIEWS[view].label} (toucher pour changer)`;
+  $('ringStepWrap').hidden = view !== 'chrono';
 }
 $('btnView').onclick = () => {
   setView(VIEWS[state.view].next);
@@ -609,6 +613,7 @@ $('btnView').onclick = () => {
   toast(VIEWS[state.view].label + '.', { duration: 2500 });
 };
 $('relClose').onclick = closeRelation;
+$('ringStep').onchange = (e) => { state.ringStep = Number(e.target.value); prefs.set('ringStep', state.ringStep); renderTree(true); };
 $('zoomFit').onclick = () => state.tree && pz.fit(state.tree.bbox);
 $('ancDepth').onchange = (e) => { state.ancDepth = Number(e.target.value); prefs.set('anc', state.ancDepth); renderTree(true); };
 $('descDepth').onchange = (e) => { state.descDepth = Number(e.target.value); prefs.set('desc', state.descDepth); renderTree(true); };
@@ -699,6 +704,8 @@ async function init() {
   $('appVersion').textContent = `Familien ${APP_VERSION}`;
   state.ancDepth = prefs.get('anc', 99);
   state.descDepth = prefs.get('desc', 99);
+  state.ringStep = prefs.get('ringStep', 10);
+  $('ringStep').value = String(state.ringStep);
   setView(prefs.get('view', 'tree'));
   fillDepthSelect($('ancDepth'), state.ancDepth);
   fillDepthSelect($('descDepth'), state.descDepth);

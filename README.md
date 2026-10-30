@@ -17,6 +17,7 @@ Tapez le nom d'une personne : Familien affiche son **arbre complet**, avec tous 
   - *Intermédiaire* : enfants sans descendants affichés empilés en colonne, parents resserrés juste au-dessus de leur enfant ;
   - *Compacte*, idéale sur téléphone : descendants en liste verticale, ancêtres « en escalier » (côté paternel à gauche, maternel à droite), les deux parents juste au-dessus de la personne.
   - *Chêne* : l'arbre dessiné comme une gravure ancienne, ancêtres dans les racines, enfants dans les branches, dernière génération dans les feuilles, en calligraphie (polices IM Fell English et Pinyon Script, licence SIL OFL, dans `fonts/`).
+  - *Chronologique* : éventail des descendants au-dessus, racines des ancêtres en dessous, et des cercles d'années (tous les 5, 10, 20 ou 25 ans) : les cousins nés la même année sont sur le même cercle ; les années inconnues sont estimées (~).
 - **Lien entre deux personnes** : dans la fiche d'une personne, « Lien avec une autre personne… », puis choisir la 2e. L'application affiche uniquement le chemin qui les relie (ancêtre commun le plus proche, sinon descendant commun, sinon alliance) et nomme le lien (frère, nièce, cousin germain, grand-oncle…).
 - Zoom au doigt (pincer) ou à la molette, nombre de générations réglable, export de l'arbre en image PNG ou SVG (pour imprimer).
 - Thème clair / sombre automatique.
@@ -94,6 +95,7 @@ Application web progressive (PWA) sans dépendance ni compilation : HTML, CSS et
 - `js/auth.js` : connexion Google (OAuth 2.0 par redirection, jeton en lecture seule)
 - `js/importers.js` : import d'un fichier .csv ou d'une page Google Sheets enregistrée (.mht, .html)
 - `js/oak.js` : vue « chêne » (gravure)
+- `js/chrono.js` : vue chronologique (cercles d'années)
 - `js/relation.js` : lien de parenté entre deux personnes
 - `js/storage.js` : enregistrement local (IndexedDB)
 - `sw.js` : service worker pour le fonctionnement hors ligne (augmenter `VERSION` à chaque modification)
