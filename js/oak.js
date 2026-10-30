@@ -82,19 +82,39 @@ export function drawGrain(lineG, knotG, pts, perp, width, from, to, mix, seed, o
     const sig = Math.min(Math.max(0.02, (rho * w * 4.2) / L), Math.min(t, 1 - t) / 2.6);
     knots.push({ t, u: spec.u, rho, w, sig });
   }
-  const shape = (u0, u1, t) => {
-    let u = u0 + (u1 - u0) * mix(t);
-    u += A * Math.sin(2 * Math.PI * freq * t + ph) * Math.sin(Math.PI * t) * (1 - 4 * u * u);
-    for (const knot of knots) {
-      const c = knot.rho * Math.exp(-(((t - knot.t) / knot.sig) ** 2));
-      const d = u - knot.u;
-      u = knot.u + (d < 0 ? -1 : 1) * Math.sqrt(d * d + c * c);
+  // Avec un nœud, le tracé est rééchantillonné finement pour que les rainures épousent ses cernes
+  if (knots.length && n < 400) {
+    const m = 400, P = [], Q = [];
+    for (let i = 0; i <= m; i++) {
+      const x = (i / m) * n, a = Math.floor(x), b = Math.min(n, a + 1), f = x - a;
+      P.push({ x: pts[a].x + (pts[b].x - pts[a].x) * f, y: pts[a].y + (pts[b].y - pts[a].y) * f });
+      const px = perp[a].x + (perp[b].x - perp[a].x) * f, py = perp[a].y + (perp[b].y - perp[a].y) * f, l = Math.hypot(px, py) || 1;
+      Q.push({ x: px / l, y: py / l });
     }
+    pts = P; perp = Q;
+  }
+  const N = pts.length - 1;
+  const base = (u0, u1, t) => {
+    const u = u0 + (u1 - u0) * mix(t);
+    return u + A * Math.sin(2 * Math.PI * freq * t + ph) * Math.sin(Math.PI * t) * (1 - 4 * u * u);
+  };
+  // Écart imposé par un nœud à l'abscisse t (en fraction de largeur) : les cernes suivent la même courbe
+  // Profil arrondi (exp(-x⁴)) : un nœud ovale, et des rainures qui s'infléchissent en douceur
+  const prof = (x) => Math.exp(-(x ** 4));
+  const gap = (knot, t) => knot.rho * prof((t - knot.t) / knot.sig);
+  const shape = (u0, u1, t, sides) => {
+    let u = base(u0, u1, t);
+    knots.forEach((knot, k) => {
+      const c = gap(knot, t), d = u - knot.u;
+      u = knot.u + sides[k] * Math.sqrt(d * d + c * c);
+    });
     return Math.max(-0.497, Math.min(0.497, u));
   };
   from.forEach((u0, j) => {
+    // Chaque rainure contourne un nœud toujours du même côté (jamais de traversée)
+    const sides = knots.map((knot) => (base(u0, to[j], knot.t) < knot.u ? -1 : 1));
     const q = pts.map((p, i) => {
-      const t = i / n, u = shape(u0, to[j], t), w = width(t);
+      const t = i / N, u = shape(u0, to[j], t, sides), w = width(t);
       return { x: p.x + perp[i].x * u * w, y: p.y + perp[i].y * u * w };
     });
     // Prolongée d'un pixel à chaque bout : se superpose à la nervure voisine (tronc ↔ branche)
@@ -103,14 +123,24 @@ export function drawGrain(lineG, knotG, pts, perp, width, from, to, mix, seed, o
     q.push(ext(q[q.length - 1], q[q.length - 2]));
     el('path', { d: 'M' + q.map((p) => `${f2(p.x)} ${f2(p.y)}`).join('L') }, lineG);
   });
+  // Cernes : courbes de même forme que l'écart des rainures, un peu en retrait (elles ne touchent pas)
   for (const knot of knots) {
-    const i = Math.round(knot.t * n), q = perp[i];
-    const c = { x: pts[i].x + q.x * knot.u * knot.w, y: pts[i].y + q.y * knot.u * knot.w };
-    const ang = (Math.atan2(-q.x, q.y) * 180) / Math.PI; // direction du bois
-    const g = el('g', { transform: `translate(${f2(c.x)} ${f2(c.y)}) rotate(${f2(ang)})` }, knotG);
-    const rx = knot.sig * L * 1.35, ry = knot.rho * knot.w * 0.62; // allongé dans le sens du bois
-    for (const k of [1, 0.8, 0.6, 0.42]) el('ellipse', { cx: 0, cy: 0, rx: f2(rx * k), ry: f2(ry * k) }, g);
-    el('ellipse', { cx: 0, cy: 0, rx: f2(rx * 0.24), ry: f2(ry * 0.26), class: 'core' }, g);
+    const g = el('g', {}, knotG);
+    const at = (t, v) => { const i = Math.round(t * N), w = width(t), u = knot.u + v; return `${f2(pts[i].x + perp[i].x * u * w)} ${f2(pts[i].y + perp[i].y * u * w)}`; };
+    // Cerne k : même profil, plus étroit et plus court, refermé en pointe douce à ses deux bouts
+    const e = 0.05, X = Math.log(1 / e) ** 0.25;
+    const ring = (k, cls) => {
+      const sk = knot.sig * (0.55 + 0.45 * k);
+      const top = [], bot = [];
+      const i0 = Math.ceil((knot.t - X * sk) * N), i1 = Math.floor((knot.t + X * sk) * N);
+      for (let i = Math.max(1, i0); i <= Math.min(N - 1, i1); i++) {
+        const t = i / N, c = k * knot.rho * Math.max(0, (prof((t - knot.t) / sk) - e) / (1 - e));
+        top.push(at(t, -c)); bot.push(at(t, c));
+      }
+      el('path', { d: 'M' + [...top, ...bot.reverse()].join('L') + 'Z', ...(cls ? { class: cls } : {}) }, g);
+    };
+    for (const k of [0.88, 0.7, 0.52, 0.36]) ring(k);
+    ring(0.2, 'core');
   }
 }
 
@@ -540,7 +570,7 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
   const trunkLines = cyl(Math.max(8, Math.floor(TT / 3.4)));
   // Deux nœuds au-dessus du cartouche, l'un à gauche, l'autre à droite
   drawGrain(hatchG, knotG, trunk.pts, trunk.perp, trunk.width, trunkLines, trunkLines, () => 0, 'tronc',
-    { knots: [{ t: [0.64, 0.67], u: -0.24 }, { t: [0.86, 0.88], u: 0.24 }], knotChance: 1, rho: 0.13 });
+    { knots: [{ t: [0.7, 0.72], u: -0.24 }, { t: [0.86, 0.88], u: 0.24 }], knotChance: 1, rho: 0.13 });
 
   // Racines (ascendants) : vers le haut des cartouches, en tendant vers le bas
   (function dirs(n) { for (const k of n.kids) { k.endDir = (S, E) => unit({ x: (E.x - S.x) * 0.5, y: Math.abs(E.y - S.y) + 40 }); dirs(k); } })(anc);
@@ -722,8 +752,8 @@ export const OAK_STYLE = LIFE_STYLE + `
   .oak-canopy-fill{fill:#e6e2b8}
   .oak-wood-edge path,.oak-wood-edge circle{fill:${INK};stroke:${INK};stroke-width:4;stroke-linejoin:round}
   .oak-wood path,.oak-wood circle{fill:#d8c197;stroke:#d8c197;stroke-width:1.4;stroke-linejoin:round}
-  .oak-knot ellipse{fill:none;stroke:${INK};stroke-width:.9;opacity:.6}
-  .oak-knot ellipse.core{fill:${INK};opacity:.55}
+  .oak-knot path{fill:none;stroke-linejoin:round;stroke:${INK};stroke-width:.9;opacity:.6}
+  .oak-knot path.core{fill:${INK};opacity:.55}
   .oak-hatch path{fill:none;stroke:#8f7a5a;stroke-width:.8;stroke-linecap:butt;stroke-linejoin:round}
   .oak-hatch .oak-rootlet{stroke:${INK};stroke-width:1.2;opacity:.7;stroke-linecap:round}
   .oak-hatch .oak-bark-line{stroke-width:1.1;opacity:.5}

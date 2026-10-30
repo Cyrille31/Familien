@@ -366,8 +366,8 @@ export const CHRONO_STYLE = `
   .ch-wood-edge path{fill:${INK};stroke:${INK};stroke-width:4;stroke-linejoin:round}
   .ch-wood path{fill:#d8c197;stroke:#d8c197;stroke-width:1.4;stroke-linejoin:round}
   .ch-grain path{fill:none;stroke:#978262;stroke-width:.7;stroke-linecap:butt;stroke-linejoin:round}
-  .ch-knot ellipse{fill:none;stroke:${INK};stroke-width:.9;opacity:.6}
-  .ch-knot ellipse.core{fill:${INK};opacity:.55}
+  .ch-knot path{fill:none;stroke-linejoin:round;stroke:${INK};stroke-width:.9;opacity:.6}
+  .ch-knot path.core{fill:${INK};opacity:.55}
   .ch-ground{fill:none;stroke:${INK};stroke-width:2}
   .ch-couple path{fill:none;stroke:${INK};stroke-width:1.3;opacity:.7;stroke-linecap:round}
   .ch-dot{fill:${INK}}
