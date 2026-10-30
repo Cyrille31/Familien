@@ -236,7 +236,9 @@ function renderChrono(g, db, o) {
   // Tronc : du sol (largeur TB) au centre de l'éventail (largeur TW), bords verticaux aux deux bouts
   const G = GROUND;
   const edge = (s) => `C${f2((s * TB) / 2)} ${f2(G * 0.55)} ${f2((s * TW) / 2)} ${f2(G * 0.45)} ${f2((s * TW) / 2)} 0`;
-  wood(`M${f2(-TB / 2)} ${G}${edge(-1)}L${f2(TW / 2)} 0C${f2(TW / 2)} ${f2(G * 0.45)} ${f2(TB / 2)} ${f2(G * 0.55)} ${f2(TB / 2)} ${G}Z`);
+  // (dépasse de quelques pixels dans les branches et les racines : aucune couture visible)
+  wood(`M${f2(-TB / 2)} ${G + 8}L${f2(-TB / 2)} ${G}${edge(-1)}L${f2(-TW / 2)} -8L${f2(TW / 2)} -8L${f2(TW / 2)} 0`
+    + `C${f2(TW / 2)} ${f2(G * 0.45)} ${f2(TB / 2)} ${f2(G * 0.55)} ${f2(TB / 2)} ${G}L${f2(TB / 2)} ${G + 8}Z`);
   const trunkLines = cyl(Math.max(6, Math.floor(TW / 3.2)));
   for (const u of trunkLines) {
     el('path', { d: `M${f2(u * TB)} ${G}C${f2(u * TB)} ${f2(G * 0.55)} ${f2(u * TW)} ${f2(G * 0.45)} ${f2(u * TW)} 0` }, grainG);

@@ -280,8 +280,10 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
 
   // Tronc : bords verticaux en haut et en bas, pour se prolonger dans les branches et les racines
   const base = 6;
-  wood(`M${f2(-TB / 2)} ${base}C${f2(-TB / 2)} ${f2(-T * 0.22)} ${f2(-TT / 2)} ${f2(-T * 0.55)} ${f2(-TT / 2)} ${f2(-T)}`
-    + `L${f2(TT / 2)} ${f2(-T)}C${f2(TT / 2)} ${f2(-T * 0.55)} ${f2(TB / 2)} ${f2(-T * 0.22)} ${f2(TB / 2)} ${base}Z`);
+  // (dépasse de quelques pixels dans les branches et les racines : aucune couture visible)
+  wood(`M${f2(-TB / 2)} ${base + 8}L${f2(-TB / 2)} ${base}C${f2(-TB / 2)} ${f2(-T * 0.22)} ${f2(-TT / 2)} ${f2(-T * 0.55)} ${f2(-TT / 2)} ${f2(-T)}`
+    + `L${f2(-TT / 2)} ${f2(-T - 8)}L${f2(TT / 2)} ${f2(-T - 8)}L${f2(TT / 2)} ${f2(-T)}`
+    + `C${f2(TT / 2)} ${f2(-T * 0.55)} ${f2(TB / 2)} ${f2(-T * 0.22)} ${f2(TB / 2)} ${base}L${f2(TB / 2)} ${base + 8}Z`);
   const trunkLines = cyl(Math.max(8, Math.floor(TT / 3.4)));
   for (const u of trunkLines) {
     el('path', { d: `M${f2(u * TB)} ${base}C${f2(u * TB)} ${f2(-T * 0.22)} ${f2(u * TT)} ${f2(-T * 0.55)} ${f2(u * TT)} ${f2(-T)}`, class: 'oak-bark-line' }, hatchG);
