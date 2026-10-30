@@ -9,7 +9,7 @@ import { findRelation } from './relation.js';
 import { computeOak, exportOakSvg, OAK_STYLE } from './oak.js';
 import { computeChrono, CHRONO_STYLE } from './chrono.js';
 
-const APP_VERSION = '1.11.0';
+const APP_VERSION = '1.12.0';
 // Fichier de la famille proposé par défaut au premier lancement
 const DEFAULT_URL = 'https://docs.google.com/spreadsheets/d/1GVpEFBoonQ2M5ZG7dK4_bNW2w1BkZXE9ZupN6cHlXYM/edit';
 // Identifiant client Google (OAuth) pour lire le fichier privé avec son compte Google.
@@ -349,6 +349,7 @@ function showPerson(id) {
   const db = state.db;
   const p = db.get(id);
   if (!p) return;
+  state.panelOpenedAt = Date.now();
   state.panelId = id;
   const fact = (label, ...vals) => {
     const v = vals.filter(Boolean).join(', ');
@@ -386,6 +387,8 @@ function showPerson(id) {
 function hidePanel() { $('panel').hidden = true; state.panelId = null; }
 
 $('panelBody').addEventListener('click', (e) => {
+  // Ignore un clic qui arrive juste après l'ouverture de la fiche (même toucher)
+  if (Date.now() - (state.panelOpenedAt || 0) < 250) return;
   const root = e.target.closest('[data-root]');
   if (root) { state.relation = null; state.pickFrom = null; return selectRoot(root.dataset.root); }
   const rel = e.target.closest('[data-rel]');
