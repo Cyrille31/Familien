@@ -1,7 +1,7 @@
 import { parseCSV } from './csv.js';
 import { FIELDS, detectMapping, findHeaderRow, headersSignature, buildDatabase, diffDatabases } from './model.js';
 import * as store from './storage.js';
-import { fetchSheet, fetchSheetWithToken, hashText } from './sheets.js';
+import { fetchSheet, fetchSheetWithToken, hashText, parseSheetUrl } from './sheets.js';
 import * as auth from './auth.js';
 import { fileToCsv } from './importers.js';
 import { computeTree, computeCompactTree, computePathTree, renderInto, exportSvgString, PanZoom } from './tree.js';
@@ -9,7 +9,7 @@ import { findRelation } from './relation.js';
 import { computeOak, exportOakSvg, OAK_STYLE } from './oak.js';
 import { computeChrono, CHRONO_STYLE } from './chrono.js';
 
-const APP_VERSION = '1.8.0';
+const APP_VERSION = '1.9.0';
 // Fichier de la famille proposé par défaut au premier lancement
 const DEFAULT_URL = 'https://docs.google.com/spreadsheets/d/1GVpEFBoonQ2M5ZG7dK4_bNW2w1BkZXE9ZupN6cHlXYM/edit';
 // Identifiant client Google (OAuth) pour lire le fichier privé avec son compte Google.
@@ -455,8 +455,18 @@ search.addEventListener('blur', () => setTimeout(() => { results.hidden = true; 
 
 // ---------- Réglages ----------
 
+// Lien d'export CSV : ouvert dans le navigateur, il utilise la connexion Google de
+// l'utilisateur, donc fonctionne aussi pour un fichier privé partagé avec lui.
+function updateCsvLink() {
+  const parsed = parseSheetUrl($('sheetUrl').value || state.config.url);
+  const link = $('csvLink');
+  if (parsed?.urls?.[0]) { link.href = parsed.urls[0]; link.removeAttribute('aria-disabled'); }
+  else { link.removeAttribute('href'); link.setAttribute('aria-disabled', 'true'); }
+}
+
 function openSettings() {
   $('sheetUrl').value = state.config.url || '';
+  updateCsvLink();
   $('autoCheck').checked = !!state.config.autoCheck;
   $('clientId').value = state.config.clientId || '';
   $('redirectUri').textContent = auth.redirectUri();
@@ -515,6 +525,7 @@ $('btnApplyMapping').onclick = async () => {
 $('btnSettings').onclick = openSettings;
 $('btnStart').onclick = openSettings;
 $('btnDownload').onclick = downloadFromDrive;
+$('sheetUrl').addEventListener('input', updateCsvLink);
 $('sheetUrl').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); downloadFromDrive(); } });
 const isClientId = (v) => /^[\w-]+\.apps\.googleusercontent\.com$/.test(v);
 

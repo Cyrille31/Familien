@@ -67,6 +67,16 @@ Voir le fichier [`exemple.csv`](exemple.csv).
 Ensuite, « Télécharger depuis le Drive » ou le bouton « Drive » ouvrent la page de connexion Google. Google affiche « Google n'a pas validé cette application » (normal en mode test) : *Continuer*. La connexion dure une heure ; au-delà, elle est redemandée lors de la prochaine vérification.
 Pour qu'un membre de la famille puisse charger le fichier, son compte Google doit **avoir accès au fichier** (partage fait par le propriétaire du fichier) et être **ajouté aux utilisateurs test**.
 
+## Utiliser sur iPhone (fichier privé)
+
+1. Ouvrir **https://cyrille31.github.io/Familien/** dans **Safari**, puis bouton Partager → **Sur l'écran d'accueil** (indispensable : sinon iOS peut effacer les données).
+2. Vérifier qu'on est connecté à son compte Google dans Safari (par exemple en ouvrant le fichier dans Safari).
+3. Dans l'application : ⚙ → **Télécharger le fichier (CSV)**. Safari télécharge le fichier dans *Fichiers → Téléchargements*.
+4. Revenir dans l'application : ⚙ → **Importer un fichier** → *Parcourir* → *Téléchargements* → choisir le fichier.
+5. Pour une mise à jour : refaire les étapes 3 et 4 ; l'application montre ce qui a changé et demande l'accord avant de remplacer.
+
+La même méthode fonctionne sur Android et sur PC.
+
 ## Installer l'application
 
 L'application est publiée par GitHub Pages (voir ci-dessous). Ouvrez son adresse puis :
