@@ -9,7 +9,7 @@
 // (effet de cylindre).
 
 import { buildAncestors, buildDescendants } from './tree.js';
-import { el, text, rng, fit, f2, INK } from './oak.js';
+import { el, text, rng, fit, f2, INK, cyl, drawGrain, wave, perpendiculars, taper } from './oak.js';
 
 const K = 6.5;          // pixels par année
 const GROUND = 330;     // le sol, sous le centre de l'éventail
@@ -172,9 +172,10 @@ function renderChrono(g, db, o) {
   const edgeG = el('g', { class: 'ch-wood-edge' }, g);
   const woodG = el('g', { class: 'ch-wood' }, g);
   const grainG = el('g', { class: 'ch-grain' }, g);
+  const knotG = el('g', { class: 'ch-knot' }, g);
+  // (le remplissage a un liseré de sa couleur : il recouvre les coutures entre pièces voisines)
   const wood = (d) => { el('path', { d }, edgeG); el('path', { d }, woodG); };
   const poly = (pts) => 'M' + pts.map((p) => `${f2(p.x)} ${f2(p.y)}`).join('L');
-  const cyl = (m) => Array.from({ length: m }, (_, j) => 0.46 * Math.sin(-Math.PI / 2 + (Math.PI * (j + 0.5)) / m));
 
   // Une branche : part du centre de la section du parent (décalée de `off` le long
   // de la perpendiculaire), file en arc vers sa position, et arrive dans l'axe du rayon.
@@ -185,35 +186,37 @@ function renderChrono(g, db, o) {
   // croiser), puis file droit vers l'extérieur.
   // `lines` : positions relatives (-0,5 … 0,5) des nervures reçues du parent ;
   // elles se prolongent toutes jusqu'au bout de la branche, sans se croiser.
+  // Une branche : part de sa place sur la section du parent (décalage `off` le long
+  // de la perpendiculaire), dans la direction du parent, rejoint en courbe le cercle
+  // r0 + D sur son propre rayon (D commun à la fratrie : pas de croisement), puis
+  // file droit vers l'extérieur jusqu'à son nœud.
+  // `lines` : positions relatives (-0,5 … 0,5) des nervures reçues du parent ;
+  // elles se prolongent toutes jusqu'au bout de la branche, sans se croiser.
   function limb(center, r0, a0, k, w0, w1, off, lines, D) {
-    const n = 34;
-    const n0 = nrm(a0);
-    const turn = (t) => ss(Math.min(1, ((k.r - r0) * t) / D));
-    const at = (t) => {
-      const e = turn(t), p = P(center, r0 + (k.r - r0) * t, a0 + (k.angle - a0) * e);
-      return { x: p.x + n0.x * off * (1 - e), y: p.y + n0.y * off * (1 - e) };
-    };
-    const pts = Array.from({ length: n + 1 }, (_, i) => at(i / n));
-    const width = (t) => w0 + (w1 - w0) * Math.pow(t, 0.75);
-    const perp = pts.map((p, i) => {
-      const q = pts[Math.min(i + 1, n)], s = pts[Math.max(i - 1, 0)];
-      const dx = q.x - s.x, dy = q.y - s.y, len = Math.hypot(dx, dy) || 1;
-      return { x: -dy / len, y: dx / len };
-    });
+    const n0 = nrm(a0), d0 = { x: Math.cos(a0), y: -Math.sin(a0) }, u1 = { x: Math.cos(k.angle), y: -Math.sin(k.angle) };
+    const base = P(center, r0, a0);
+    const S = { x: base.x + n0.x * off, y: base.y + n0.y * off };
+    const rT = Math.min(k.r, r0 + D);
+    const Q = P(center, rT, k.angle);
+    // Tangentes proportionnées à la distance : virage ample, sans coude
+    const h = Math.hypot(Q.x - S.x, Q.y - S.y) * 0.42;
+    const c0 = { x: S.x + d0.x * h, y: S.y + d0.y * h }, c1 = { x: Q.x - u1.x * h, y: Q.y - u1.y * h };
+    const n1 = 28, n2 = k.r > rT + 1 ? 14 : 0, raw = [];
+    for (let i = 0; i <= n1; i++) {
+      const t = i / n1, v = 1 - t;
+      raw.push({ x: v * v * v * S.x + 3 * v * v * t * c0.x + 3 * v * t * t * c1.x + t * t * t * Q.x, y: v * v * v * S.y + 3 * v * v * t * c0.y + 3 * v * t * t * c1.y + t * t * t * Q.y });
+    }
+    for (let i = 1; i <= n2; i++) raw.push(P(center, rT + ((k.r - rT) * i) / n2, k.angle));
+    const n = raw.length - 1;
+    // Axe légèrement ondulé (nul aux deux bouts : raccords parfaits)
+    const pts = wave(raw, 'b' + k.id, Math.min(6, 1 + Math.abs(k.r - r0) * 0.012) * (w0 > 5 ? 1 : 0.5));
+    const perp = perpendiculars(pts);
+    const width = taper(w0, w1); // s'amincit sans à-coup : même largeur et même direction à la jonction
     const side = (u) => pts.map((p, i) => ({ x: p.x + perp[i].x * u * width(i / n), y: p.y + perp[i].y * u * width(i / n) }));
-    const L = side(0.5), Rr = side(-0.5);
-    wood(poly([...L, ...Rr.reverse()]) + 'Z');
-    // Nervures : dans l'ordre (aucun croisement), elles glissent vers une
-    // répartition « cylindrique » pendant le virage, puis restent parallèles
+    wood(poly([...side(0.5), ...side(-0.5).reverse()]) + 'Z');
     const keep = [...lines].sort((x, y) => x - y);
     const target = cyl(keep.length);
-    keep.forEach((u0, j) => {
-      const d = pts.map((p, i) => {
-        const t = i / n, u = u0 + (target[j] - u0) * turn(t);
-        return { x: p.x + perp[i].x * u * width(t), y: p.y + perp[i].y * u * width(t) };
-      });
-      el('path', { d: poly(d) }, grainG);
-    });
+    drawGrain(grainG, knotG, pts, perp, width, keep, target, (t) => ss(Math.min(1, (t * n) / n1)), k.id);
     return { end: pts[n], lines: target };
   }
 
@@ -236,12 +239,20 @@ function renderChrono(g, db, o) {
   // Tronc : du sol (largeur TB) au centre de l'éventail (largeur TW), bords verticaux aux deux bouts
   const G = GROUND;
   const edge = (s) => `C${f2((s * TB) / 2)} ${f2(G * 0.55)} ${f2((s * TW) / 2)} ${f2(G * 0.45)} ${f2((s * TW) / 2)} 0`;
-  // (dépasse de quelques pixels dans les branches et les racines : aucune couture visible)
-  wood(`M${f2(-TB / 2)} ${G + 8}L${f2(-TB / 2)} ${G}${edge(-1)}L${f2(-TW / 2)} -8L${f2(TW / 2)} -8L${f2(TW / 2)} 0`
-    + `C${f2(TW / 2)} ${f2(G * 0.45)} ${f2(TB / 2)} ${f2(G * 0.55)} ${f2(TB / 2)} ${G}L${f2(TB / 2)} ${G + 8}Z`);
-  const trunkLines = cyl(Math.max(6, Math.floor(TW / 3.2)));
-  for (const u of trunkLines) {
-    el('path', { d: `M${f2(u * TB)} ${G}C${f2(u * TB)} ${f2(G * 0.55)} ${f2(u * TW)} ${f2(G * 0.45)} ${f2(u * TW)} 0` }, grainG);
+  wood(`M${f2(-TB / 2)} ${G}${edge(-1)}L${f2(TW / 2)} 0C${f2(TW / 2)} ${f2(G * 0.45)} ${f2(TB / 2)} ${f2(G * 0.55)} ${f2(TB / 2)} ${G}Z`);
+  const trunkLines = cyl(Math.max(8, Math.floor(TW / 3.2)));
+  {
+    // Axe du tronc et demi-largeur, échantillonnés le long de son bord (courbe de Bézier)
+    const bez = (a, b, c, d, t) => (1 - t) ** 3 * a + 3 * (1 - t) ** 2 * t * b + 3 * (1 - t) * t * t * c + t ** 3 * d;
+    const n = 40, pts = [], half = [];
+    for (let i = 0; i <= n; i++) {
+      const t = i / n;
+      pts.push({ x: 0, y: bez(G, G * 0.55, G * 0.45, 0, t) });
+      half.push(bez(TB / 2, TB / 2, TW / 2, TW / 2, t));
+    }
+    const width = (t) => 2 * half[Math.round(t * n)];
+    // Deux nœuds, de part et d'autre du cartouche
+    drawGrain(grainG, knotG, pts, pts.map(() => ({ x: 1, y: 0 })), width, trunkLines, trunkLines, () => 0, 'tronc', { knotT: [[0.12, 0.16], [0.84, 0.88]], knotChance: 1, rho: 0.07 });
   }
   grow(C0, desc, 0, Math.PI / 2, TW, trunkLines, 'b');
   // Les racines partent du pied du tronc ; vu vers le bas, la gauche et la droite s'inversent
@@ -335,9 +346,11 @@ export const CHRONO_STYLE = `
   .ch-ring{fill:none;stroke:${INK};stroke-width:.8;opacity:.35;stroke-dasharray:4 5}
   .ch-ring.major{stroke-width:1.3;opacity:.55;stroke-dasharray:none}
   .ch-year{font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:13px;fill:${INK};opacity:.75}
-  .ch-wood-edge path{fill:${INK};stroke:${INK};stroke-width:3;stroke-linejoin:round}
-  .ch-wood path{fill:#d8c197;stroke:none}
-  .ch-grain path{fill:none;stroke:${INK};stroke-width:.7;opacity:.42;stroke-linecap:round}
+  .ch-wood-edge path{fill:${INK};stroke:${INK};stroke-width:4;stroke-linejoin:round}
+  .ch-wood path{fill:#d8c197;stroke:#d8c197;stroke-width:1.4;stroke-linejoin:round}
+  .ch-grain path{fill:none;stroke:#978262;stroke-width:.7;stroke-linecap:butt;stroke-linejoin:round}
+  .ch-knot ellipse{fill:none;stroke:${INK};stroke-width:.9;opacity:.6}
+  .ch-knot ellipse.core{fill:${INK};opacity:.55}
   .ch-ground{fill:none;stroke:${INK};stroke-width:2}
   .ch-dot{fill:${INK}}
   .ch-person{cursor:pointer}
