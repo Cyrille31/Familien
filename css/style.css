@@ -251,3 +251,5 @@ button, input, select { font: inherit; color: inherit; }
 body.relation-mode .toolbar .gen, body.relation-mode #btnView { display: none; }
 .results .small { font-size: 13px; }
 #btnView[data-view="oak"] .v-oak { display: block; }
+#btnView[data-view="chrono"] .v-chrono { display: block; }
+@media (max-width: 640px) { .toolbar { overflow-x: auto; } }

@@ -5,7 +5,7 @@
 import { layoutTree, layoutAncestorsClose, buildAncestors, buildDescendants } from './tree.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-const INK = '#3b2a1a';
+export const INK = '#3b2a1a';
 const TRUNK_H = 330;      // hauteur du tronc (sol à y = 0)
 const UP = 150;           // écart entre générations dans la ramure
 const DOWN = 128;         // écart entre générations dans les racines
@@ -14,21 +14,21 @@ const NODE_W = 166;
 
 // ---------- Outils ----------
 
-function el(name, attrs = {}, parent) {
+export function el(name, attrs = {}, parent) {
   const e = document.createElementNS(SVG_NS, name);
   for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
   if (parent) parent.appendChild(e);
   return e;
 }
 
-function text(parent, x, y, str, cls, attrs = {}) {
+export function text(parent, x, y, str, cls, attrs = {}) {
   const t = el('text', { x, y, class: cls, ...attrs }, parent);
   t.textContent = str;
   return t;
 }
 
 // Aléatoire reproductible : le même arbre est toujours dessiné de la même façon.
-function rng(seed) {
+export function rng(seed) {
   let h = 2166136261;
   for (const c of String(seed)) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
   return () => {
@@ -38,10 +38,10 @@ function rng(seed) {
   };
 }
 
-const fit = (s, max) => (s.length > max ? s.slice(0, max - 1) + '…' : s);
-const f2 = (n) => Math.round(n * 10) / 10;
+export const fit = (s, max) => (s.length > max ? s.slice(0, max - 1) + '…' : s);
+export const f2 = (n) => Math.round(n * 10) / 10;
 
-function lifeSpan(p) {
+export function lifeSpan(p) {
   const b = p.birthYear, d = p.deathYear;
   if (b && d) return `${b} – ${d}`;
   if (b) return p.deceased ? `${b} – †` : `né${p.sex === 'F' ? 'e' : ''} en ${b}`;
@@ -181,13 +181,22 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
   el('rect', { x: bbox.x + 22, y: bbox.y + 22, width: bbox.w - 44, height: bbox.h - 44, fill: 'none', stroke: INK, 'stroke-width': 1, opacity: 0.6 }, g);
 
   const canopyG = el('g', { class: 'oak-canopy' }, g);
+  // Bois en deux passes : tous les contours, puis tous les remplissages par-dessus.
+  // Le tronc, les branches et les racines forment ainsi une seule silhouette, sans raccord.
+  const edgeG = el('g', { class: 'oak-wood-edge' }, g);
   const woodG = el('g', { class: 'oak-wood' }, g);
   const hatchG = el('g', { class: 'oak-hatch' }, g);
   const leafG = el('g', {}, g);
   const labelG = el('g', {}, g);
 
+  const wood = (d) => { el('path', { d }, edgeG); el('path', { d }, woodG); };
+  const knot = (p, w) => { // arrondit la fourche
+    el('circle', { cx: f2(p.x), cy: f2(p.y), r: f2(w / 2) }, edgeG);
+    el('circle', { cx: f2(p.x), cy: f2(p.y), r: f2(w / 2) }, woodG);
+  };
   const limb = (p0, c0, c1, p1, w0, w1, seed) => {
-    el('path', { d: taperedPath(p0, c0, c1, p1, w0, w1), class: 'oak-limb' }, woodG);
+    wood(taperedPath(p0, c0, c1, p1, w0, w1));
+    knot(p0, w0 * 0.92);
     // Traits de gravure le long du bois
     if (w0 > 7) {
       const r = rng(seed);
@@ -263,7 +272,7 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
   const X = (v) => f2(v * tw);
   const trunk = `M${X(-96)} 8 C${X(-70)} -20 ${X(-58)} -60 ${X(-56)} -110 C${X(-52)} ${f2(-T * 0.45)} ${X(-48)} ${f2(-T + 70)} ${X(-60)} ${f2(-T - 6)}
     C${X(-30)} ${f2(-T + 12)} ${X(30)} ${f2(-T + 12)} ${X(60)} ${f2(-T - 6)} C${X(48)} ${f2(-T + 70)} ${X(54)} ${f2(-T * 0.45)} ${X(58)} -110 C${X(60)} -60 ${X(74)} -20 ${X(100)} 8 Z`;
-  el('path', { d: trunk, class: 'oak-trunk' }, woodG);
+  wood(trunk);
   const rb = rng('ecorce');
   for (let k = -4; k <= 4; k++) {
     const x = k * 11 * tw, j = (rb() - 0.5) * 8;
@@ -414,8 +423,8 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
 export const OAK_STYLE = `
   .oak-canopy-edge{fill:none;stroke:${INK};stroke-width:7;stroke-dasharray:2 9;stroke-linecap:round}
   .oak-canopy-fill{fill:#e6e2b8}
-  .oak-limb{fill:url(#oak-bark);stroke:${INK};stroke-width:1.6;stroke-linejoin:round}
-  .oak-trunk{fill:url(#oak-bark);stroke:${INK};stroke-width:2.2}
+  .oak-wood-edge path,.oak-wood-edge circle{fill:${INK};stroke:${INK};stroke-width:3.2;stroke-linejoin:round}
+  .oak-wood path,.oak-wood circle{fill:#d8c197;stroke:none}
   .oak-hatch path{fill:none;stroke:${INK};stroke-width:.9;opacity:.55;stroke-linecap:round}
   .oak-hatch .oak-rootlet{stroke-width:1.2;opacity:.7}
   .oak-hatch .oak-bark-line{stroke-width:1.1;opacity:.5}
@@ -440,7 +449,7 @@ export const OAK_STYLE = `
   .oak-halo{paint-order:stroke;stroke:#f3e7c6;stroke-width:4px;stroke-linejoin:round}
 `;
 
-async function fontDataUrl(url) {
+export async function fontDataUrl(url) {
   const blob = await (await fetch(url)).blob();
   return new Promise((resolve) => {
     const fr = new FileReader();
@@ -464,7 +473,7 @@ export async function exportOakSvg(db, oak) {
       @font-face{font-family:'IM Fell English';font-style:italic;src:url(${fellIt}) format('woff2')}
       @font-face{font-family:'Pinyon Script';src:url(${pinyon}) format('woff2')}`;
   } catch { /* polices de secours */ }
-  el('style', {}, svg).textContent = fonts + OAK_STYLE;
+  el('style', {}, svg).textContent = fonts + OAK_STYLE + (oak.style || '');
   oak.render(el('g', {}, svg), db);
   return new XMLSerializer().serializeToString(svg);
 }
