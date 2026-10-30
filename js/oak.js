@@ -71,12 +71,16 @@ export function drawGrain(lineG, knotG, pts, perp, width, from, to, mix, seed, o
   for (let i = 1; i <= n; i++) L += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
   const A = 0.045, freq = 1 + r() * 1.8, ph = r() * 2 * Math.PI;
   const knots = [];
-  for (const [t0, t1] of opts.knotT || [[0.3, 0.75]]) {
-    if (Math.min(width(0), width(1)) < (opts.knotMin || 18) || L < 110 || r() >= (opts.knotChance ?? 0.5)) continue;
-    const t = t0 + r() * (t1 - t0), w = width(t), rho = opts.rho || 0.09 + r() * 0.05;
+  // Nœuds : position (le long du bois) et côté imposés, ou choisis au hasard
+  // (alternativement à gauche ou à droite d'une branche à l'autre)
+  const specs = opts.knots || [{ t: [0.3, 0.72], u: (r() < 0.5 ? -1 : 1) * (0.14 + r() * 0.12) }];
+  for (const spec of specs) {
+    if (Math.min(width(0), width(1)) < (opts.knotMin || 16) || L < 110 || r() >= (opts.knotChance ?? 0.55)) continue;
+    const [t0, t1] = spec.t;
+    const t = t0 + r() * (t1 - t0), w = width(t), rho = opts.rho || 0.12 + r() * 0.05;
     // Le nœud doit s'estomper avant les extrémités : les raccords restent parfaits
-    const sig = Math.min(Math.max(0.02, (rho * w * 2.6) / L), Math.min(t, 1 - t) / 2.8);
-    knots.push({ t, u: (r() - 0.5) * 0.34, rho, w, sig });
+    const sig = Math.min(Math.max(0.02, (rho * w * 3.2) / L), Math.min(t, 1 - t) / 2.8);
+    knots.push({ t, u: spec.u, rho, w, sig });
   }
   const shape = (u0, u1, t) => {
     let u = u0 + (u1 - u0) * mix(t);
@@ -104,9 +108,9 @@ export function drawGrain(lineG, knotG, pts, perp, width, from, to, mix, seed, o
     const c = { x: pts[i].x + q.x * knot.u * knot.w, y: pts[i].y + q.y * knot.u * knot.w };
     const ang = (Math.atan2(-q.x, q.y) * 180) / Math.PI; // direction du bois
     const g = el('g', { transform: `translate(${f2(c.x)} ${f2(c.y)}) rotate(${f2(ang)})` }, knotG);
-    const rx = knot.sig * L * 0.95, ry = knot.rho * knot.w * 0.9;
-    for (const k of [1, 0.72, 0.46]) el('ellipse', { cx: 0, cy: 0, rx: f2(rx * k), ry: f2(ry * k) }, g);
-    el('ellipse', { cx: 0, cy: 0, rx: f2(rx * 0.2), ry: f2(ry * 0.22), class: 'core' }, g);
+    const rx = knot.sig * L * 0.95, ry = knot.rho * knot.w * 0.92;
+    for (const k of [1, 0.8, 0.6, 0.42]) el('ellipse', { cx: 0, cy: 0, rx: f2(rx * k), ry: f2(ry * k) }, g);
+    el('ellipse', { cx: 0, cy: 0, rx: f2(rx * 0.24), ry: f2(ry * 0.26), class: 'core' }, g);
   }
 }
 
@@ -176,8 +180,9 @@ export function computeOak(db, rootId, ancDepth, descDepth) {
 
   // Racines : ascendants resserrés sous le tronc
   const anc = buildAncestors(db, rootId, ancDepth);
+  anc.kids.forEach((k) => { k.base = 'root'; });
   const spouseId = db.spousesOf(rootId)[0];
-  if (spouseId) anc.kids.push(...buildAncestors(db, spouseId, ancDepth).kids);
+  if (spouseId) anc.kids.push(...buildAncestors(db, spouseId, ancDepth).kids.map((k) => Object.assign(k, { base: 'spouse' })));
   layoutAncestorsClose(anc);
   (function place(n) {
     n.y = n.depth === 0 ? 0 : 70 + (n.depth - 1) * DOWN + 22 * Math.pow(Math.min(1, Math.abs(n.x) / 900), 2);
@@ -362,8 +367,8 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
       pts.push({ x: 0, y: bez(base, -T * 0.22, -T * 0.55, -T, t) });
       half.push(bez(TB / 2, TB / 2, TT / 2, TT / 2, t));
     }
-    // Un nœud au-dessus du cartouche
-    drawGrain(hatchG, knotG, pts, pts.map(() => ({ x: 1, y: 0 })), (t) => 2 * half[Math.round(t * n)], trunkLines, trunkLines, () => 0, 'tronc', { knotT: [[0.72, 0.8]], knotChance: 1, rho: 0.07 });
+    // Deux nœuds au-dessus du cartouche, l'un à gauche, l'autre à droite
+    drawGrain(hatchG, knotG, pts, pts.map(() => ({ x: 1, y: 0 })), (t) => 2 * half[Math.round(t * n)], trunkLines, trunkLines, () => 0, 'tronc', { knots: [{ t: [0.64, 0.67], u: -0.24 }, { t: [0.86, 0.88], u: 0.24 }], knotChance: 1, rho: 0.15 });
   }
 
   // Racines (ascendants) : vers le haut des cartouches, en tendant vers le bas
@@ -435,6 +440,19 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
       branchLabels(k);
     }
   })(desc);
+  // Couples d'ancêtres : un trait souple relie le père et la mère, avec la date de mariage
+  (function couples(n, top) {
+    const groups = top ? [n.kids.filter((k) => k.base === 'root'), n.kids.filter((k) => k.base === 'spouse')] : [n.kids];
+    for (const grp of groups) {
+      if (grp.length !== 2) continue;
+      const [a, b] = [...grp].sort((p, q) => p.x - q.x);
+      const A = { x: a.x + NODE_W / 2 - 24, y: a.y - 29 }, B = { x: b.x - NODE_W / 2 + 24, y: b.y - 29 };
+      const C = { x: (A.x + B.x) / 2, y: Math.min(A.y, B.y) - 26 };
+      el('path', { d: `M${f2(A.x)} ${f2(A.y)}Q${f2(C.x)} ${f2(C.y)} ${f2(B.x)} ${f2(B.y)}`, class: 'oak-couple' }, labelG);
+      text(labelG, (A.x + 2 * C.x + B.x) / 4, (A.y + 2 * C.y + B.y) / 4 - 6, marriage(a.id, b.id), 'oak-small oak-halo', { 'text-anchor': 'middle' });
+    }
+    for (const k of n.kids) couples(k, false);
+  })(anc, true);
   (function rootLabels(n) {
     for (const k of n.kids) {
       const grp = el('g', { class: 't-person oak-person', 'data-id': k.id }, labelG);
@@ -546,6 +564,7 @@ export const OAK_STYLE = `
   .oak-ribbon-tail{fill:#e2d0a2;stroke:${INK};stroke-width:1.2}
   .oak-plaque{fill:#f5ebcf;stroke:${INK};stroke-width:2}
   .oak-plaque-inner{fill:none;stroke:${INK};stroke-width:.8;opacity:.7}
+  .oak-couple{fill:none;stroke:${INK};stroke-width:1.3;opacity:.75;stroke-linecap:round}
   .oak-ground-line{fill:none;stroke:${INK};stroke-width:2}
   .oak-grass{fill:none;stroke:${INK};stroke-width:1;opacity:.6;stroke-linecap:round}
   .oak-person{cursor:pointer}

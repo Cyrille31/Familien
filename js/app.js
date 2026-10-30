@@ -9,7 +9,7 @@ import { findRelation } from './relation.js';
 import { computeOak, exportOakSvg, OAK_STYLE } from './oak.js';
 import { computeChrono, CHRONO_STYLE } from './chrono.js';
 
-const APP_VERSION = '1.10.0';
+const APP_VERSION = '1.11.0';
 // Fichier de la famille proposé par défaut au premier lancement
 const DEFAULT_URL = 'https://docs.google.com/spreadsheets/d/1GVpEFBoonQ2M5ZG7dK4_bNW2w1BkZXE9ZupN6cHlXYM/edit';
 // Identifiant client Google (OAuth) pour lire le fichier privé avec son compte Google.
