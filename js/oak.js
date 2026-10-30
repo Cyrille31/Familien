@@ -135,14 +135,40 @@ export const taper = (w0, w1) => (t) => w0 + (w1 - w0) * smooth(t);
 
 // Tronc légèrement sinueux, de yBottom (largeur wB) à yTop (largeur wT). L'axe et les
 // bords sont verticaux aux deux bouts (raccords parfaits avec racines et branches).
-export function trunkShape(yBottom, yTop, wB, wT, seed) {
+// Conjoints, en tête celui qui est l'autre parent du plus grand nombre d'enfants
+// (un remariage tardif sans enfant ne prend pas la place de la mère des enfants).
+export function spousesMainFirst(db, id) {
+  const list = db.spousesOf(id).slice();
+  const count = new Map();
+  for (const cid of db.childrenOf(id)) {
+    const c = db.get(cid), other = c && (c.father === id ? c.mother : c.father);
+    if (other) count.set(other, (count.get(other) || 0) + 1);
+  }
+  for (const o of count.keys()) if (!list.includes(o)) list.push(o);
+  return list.map((sid, i) => ({ sid, i, n: count.get(sid) || 0 })).sort((a, b) => b.n - a.n || a.i - b.i).map((x) => x.sid);
+}
+
+// Date de mariage d'un couple : celle de la fiche dont l'autre est le premier conjoint
+export function marriageDate(db, a, b) {
+  const pa = db.get(a), pb = db.get(b);
+  if (db.spousesOf(a)[0] === b && pa?.marriageDate) return pa.marriageDate;
+  if (db.spousesOf(b)[0] === a && pb?.marriageDate) return pb.marriageDate;
+  const single = (x, y, px) => db.spousesOf(x).length === 1 && db.spousesOf(x)[0] === y && px?.marriageDate;
+  return single(a, b, pa) || single(b, a, pb) || '';
+}
+
+// `tc` : position (0 = pied, 1 = sommet) de l'écriteau ; l'axe du tronc y repasse par le centre,
+// ainsi qu'au pied et au sommet, et ondule doucement entre les deux.
+export function trunkShape(yBottom, yTop, wB, wT, seed, tc = 0.5) {
   const r = rng('tronc' + seed), n = 60;
-  const A = 0.16 * wT, f = 0.8 + r() * 0.5, ph = r() * 2 * Math.PI;
+  const A = 0.09 * wT, sgn = r() < 0.5 ? -1 : 1;
   const B = 0.06 * wT, fb = 1.5 + r() * 0.8, pb = r() * 2 * Math.PI;
   const pts = [], half = [];
   for (let i = 0; i <= n; i++) {
     const t = i / n, env = Math.sin(Math.PI * t) ** 2;
-    pts.push({ x: A * Math.sin(2 * Math.PI * f * t + ph) * env, y: yBottom + (yTop - yBottom) * t });
+    // sin² : axe vertical au pied, à l'écriteau et au sommet (raccords nets avec racines et branches)
+    const s = t < tc ? Math.sin((Math.PI * t) / tc) ** 2 : -(Math.sin((Math.PI * (t - tc)) / (1 - tc)) ** 2);
+    pts.push({ x: sgn * A * s, y: yBottom + (yTop - yBottom) * t });
     half.push(wB / 2 + (wT / 2 - wB / 2) * smooth(t) + B * Math.sin(2 * Math.PI * fb * t + pb) * env);
   }
   const perp = perpendiculars(pts);
@@ -333,7 +359,7 @@ export function computeOak(db, rootId, ancDepth, descDepth) {
   // Racines : ascendants resserrés sous le tronc
   const anc = buildAncestors(db, rootId, ancDepth);
   anc.kids.forEach((k) => { k.base = 'root'; });
-  const spouseId = db.spousesOf(rootId)[0];
+  const spouseId = spousesMainFirst(db, rootId)[0];
   if (spouseId) anc.kids.push(...buildAncestors(db, spouseId, ancDepth).kids.map((k) => Object.assign(k, { base: 'spouse' })));
   layoutAncestorsClose(anc);
   (function place(n) {
@@ -509,7 +535,7 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
 
   // Tronc : bords verticaux en haut et en bas, pour se prolonger dans les branches et les racines
   const base = 6;
-  const trunk = trunkShape(base, -T, TB, TT, root.id);
+  const trunk = trunkShape(base, -T, TB, TT, root.id, (base + T * 0.42) / (base + T));
   wood(trunk.d);
   const trunkLines = cyl(Math.max(8, Math.floor(TT / 3.4)));
   // Deux nœuds au-dessus du cartouche, l'un à gauche, l'autre à droite
@@ -572,7 +598,7 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
       }
       // Gland, de temps en temps
       if (r() < 0.18) acorn(grp, k.x + (r() - 0.5) * 60, k.y + LEAF_H / 2 + 10);
-      label(grp, k.x, k.y, p, db.spousesOf(k.id));
+      label(grp, k.x, k.y, p, spousesMainFirst(db, k.id));
     }
   })(desc);
 
@@ -581,7 +607,7 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
     for (const k of n.kids) {
       if (!k.kids.length) continue;
       const grp = el('g', { class: 't-person oak-person', 'data-id': k.id }, labelG);
-      ribbon(grp, k.x, k.y, db.get(k.id), db.spousesOf(k.id));
+      ribbon(grp, k.x, k.y, db.get(k.id), spousesMainFirst(db, k.id));
       branchLabels(k);
     }
   })(desc);
@@ -622,7 +648,7 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
   // ----- Cartouche du tronc : la personne choisie -----
   const rg = el('g', { class: 't-person oak-person', 'data-id': root.id }, g);
   const cy = -T * 0.42;
-  const spId = db.spousesOf(root.id)[0];
+  const spId = spousesMainFirst(db, root.id)[0];
   const ph = spId ? 160 : 104;
   el('path', { d: `M-128 ${cy - ph / 2}h256c-10 18 -10 ${ph - 18} 0 ${ph}h-256c10 -18 10 ${-(ph - 18)} 0 ${-ph}Z`, class: 'oak-plaque' }, rg);
   el('path', { d: `M-118 ${cy - ph / 2 + 8}h236c-8 16 -8 ${ph - 32} 0 ${ph - 16}h-236c8 -16 8 ${-(ph - 32)} 0 ${-(ph - 16)}Z`, class: 'oak-plaque-inner' }, rg);
@@ -654,7 +680,7 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
   }
 
   function marriage(a, b) {
-    const date = db.get(a)?.marriageDate || db.get(b)?.marriageDate;
+    const date = marriageDate(db, a, b);
     return date ? `∞ ${date}` : '∞';
   }
 
