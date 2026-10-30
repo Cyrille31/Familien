@@ -214,8 +214,10 @@ export function trunkShape(yBottom, yTop, wB, wT, seed, tc = 0.5) {
     pts.push({ x: sgn * A * s, y: yBottom + (yTop - yBottom) * t });
     half.push(wB / 2 + (wT / 2 - wB / 2) * smooth(t) + B * Math.sin(2 * Math.PI * fb * t + pb) * env);
   }
-  const perp = perpendiculars(pts);
-  const width = (t) => 2 * half[Math.max(0, Math.min(n, Math.round(t * n)))];
+  // Décalages horizontaux (le tronc reste presque vertical) : dans les courbes d'un tronc large,
+  // des décalages perpendiculaires à l'axe se replieraient en escalier
+  const perp = pts.map(() => ({ x: Math.sign(yBottom - yTop) || 1, y: 0 }));
+  const width = (t) => { const x = Math.max(0, Math.min(n, t * n)), i = Math.min(n - 1, Math.floor(x)); return 2 * (half[i] + (half[i + 1] - half[i]) * (x - i)); };
   const side = (u) => pts.map((p, i) => `${f2(p.x + perp[i].x * u * 2 * half[i])} ${f2(p.y + perp[i].y * u * 2 * half[i])}`);
   const d = 'M' + [...side(0.5), ...side(-0.5).reverse()].join('L') + 'Z';
   return { pts, perp, width, d };
@@ -393,7 +395,8 @@ export function computeOak(db, rootId, ancDepth, descDepth) {
   const tw = Math.min(3, Math.pow(scale, 0.7));
   const trunkH = TRUNK_H * Math.min(2.2, Math.sqrt(scale));
   const up = UP * Math.max(1, Math.min(3, scale * 0.85));
-  const dome = Math.max(120, maxX * 0.24);
+  // Couronne bombée, mais pas au point que des rameaux passent sous les branches voisines
+  const dome = Math.max(120, Math.min(maxX * 0.24, up * 0.8));
   (function place(n) {
     n.y = n.depth === 0 ? -trunkH : -trunkH - n.depth * up - dome * (1 - Math.pow(n.x / maxX, 2));
     n.kids.forEach(place);
@@ -406,13 +409,13 @@ export function computeOak(db, rootId, ancDepth, descDepth) {
   if (spouseId) anc.kids.push(...buildAncestors(db, spouseId, ancDepth).kids.map((k) => Object.assign(k, { base: 'spouse' })));
   layoutAncestorsClose(anc);
   (function place(n) {
-    n.y = n.depth === 0 ? 0 : 70 + (n.depth - 1) * DOWN + 22 * Math.pow(Math.min(1, Math.abs(n.x) / 900), 2);
+    n.y = n.depth === 0 ? 0 : 150 + (n.depth - 1) * DOWN + 22 * Math.pow(Math.min(1, Math.abs(n.x) / 900), 2);
     n.weight = 1 + n.kids.reduce((s, k) => s + place(k), 0);
     return n.weight;
   })(anc);
 
   // Cadre
-  let minX = -260, maxXb = 260, minY = -trunkH - 200, maxY = 140;
+  let minX = -260, maxXb = 260, minY = -trunkH - 200, maxY = 220;
   const grow = (x, y, w, h) => {
     minX = Math.min(minX, x - w / 2); maxXb = Math.max(maxXb, x + w / 2);
     minY = Math.min(minY, y - h / 2); maxY = Math.max(maxY, y + h / 2);
@@ -481,21 +484,25 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
 
   // Une pièce de bois de S à E : part dans la direction d0 (celle du parent), arrive
   // dans la direction d1 ; largeur w0 → w1 ; `lines` = nervures reçues du parent.
-  function limb(S, d0, E, d1, w0, w1, lines, seed) {
-    const r = rng(seed);
+  // `h` : longueur de tangente au départ, commune aux branches sœurs (elles partent parallèles) ;
+  // `amp` : ondulation maximale, bornée par l'écart entre branches voisines.
+  // Tracé : avancée régulière dans la direction du parent (a·t), écart latéral progressif
+  // (b·g(t)) ; les branches sœurs avancent au même rythme et restent donc dans l'ordre.
+  // g = t² (arrivée inclinée, vers une feuille) ou 3t² − 2t³ (arrivée dans l'axe).
+  function limb(S, d0, E, w0, w1, lines, seed, amp, waveSeed, toLeaf) {
     const L = Math.hypot(E.x - S.x, E.y - S.y);
-    const c0 = { x: S.x + d0.x * L * (0.4 + r() * 0.1), y: S.y + d0.y * L * (0.4 + r() * 0.1) };
-    const c1 = { x: E.x - d1.x * L * 0.35, y: E.y - d1.y * L * 0.35 };
-    const n = 36, raw = [];
+    const q = perpOf(d0), vx = E.x - S.x, vy = E.y - S.y;
+    const a = vx * d0.x + vy * d0.y, b = vx * q.x + vy * q.y;
+    // Échantillons resserrés aux deux bouts : départ et arrivée exactement dans l'axe
+    const n = 48, raw = [];
     for (let i = 0; i <= n; i++) {
-      const t = i / n, u = 1 - t;
-      raw.push({
-        x: u * u * u * S.x + 3 * u * u * t * c0.x + 3 * u * t * t * c1.x + t * t * t * E.x,
-        y: u * u * u * S.y + 3 * u * u * t * c0.y + 3 * u * t * t * c1.y + t * t * t * E.y,
-      });
+      const t = 0.5 - 0.5 * Math.cos((Math.PI * i) / n), g = toLeaf ? t * t : t * t * (3 - 2 * t);
+      raw.push({ x: S.x + d0.x * a * t + q.x * b * g, y: S.y + d0.y * a * t + q.y * b * g });
     }
     // Axe légèrement ondulé (nul aux deux bouts), amincissement sans à-coup
-    const pts = wave(raw, seed, Math.min(10, 2 + L * 0.018) * (w0 > 5 ? 1 : 0.6));
+    // Même ondulation pour les branches sœurs : elles restent côte à côte sans se croiser
+    const pts = wave(raw, waveSeed, Math.min(amp, Math.min(10, 2 + L * 0.018) * (w0 > 5 ? 1 : 0.6)));
+    if (globalThis.__FAMILIEN_DEBUG) (globalThis.__limbs ||= []).push({ id: seed, pts });
     const perp = perpendiculars(pts);
     const width = taper(w0, w1);
     const side = (u) => pts.map((p, i) => ({ x: p.x + perp[i].x * u * width(i / n), y: p.y + perp[i].y * u * width(i / n) }));
@@ -510,17 +517,26 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
   // Fourche : les enfants partent côte à côte, en se partageant la section du parent
   function fork(node, P, dir, W, lines, target, prefix) {
     const q = perpOf(dir);
-    const kids = [...node.kids].sort((a, b) => (target(a).x - P.x) * q.x + (target(a).y - P.y) * q.y - ((target(b).x - P.x) * q.x + (target(b).y - P.y) * q.y));
+    // Ordre angulaire autour du point de départ (vu dans la direction du parent) : pas de croisement
+    const ang = (k) => { const E = target(k), vx = E.x - P.x, vy = E.y - P.y; return Math.atan2(vx * q.x + vy * q.y, vx * dir.x + vy * dir.y); };
+    const kids = [...node.kids].sort((a, b) => ang(a) - ang(b));
+    const ends = kids.map(target);
+    const toLeaf = !node.kids.some((k) => k.kids.length) && prefix === 'b';
+    let gap = Infinity;
+    for (let i = 1; i < ends.length; i++) gap = Math.min(gap, Math.hypot(ends[i].x - ends[i - 1].x, ends[i].y - ends[i - 1].y));
+    const amp = Math.min(7, 0.06 * gap);
     let acc = -W / 2;
     for (const k of kids) {
       const pos = acc + k.start / 2;
       acc += k.start;
-      const S = { x: P.x + q.x * pos, y: P.y + q.y * pos };
+      // (départ 3 px en retrait : le remplissage recouvre le bord de la pièce mère dans la fourche)
+      const S = { x: P.x + q.x * pos - dir.x * 3, y: P.y + q.y * pos - dir.y * 3 };
       const E = target(k);
       const lo = pos - k.start / 2, hi = pos + k.start / 2, last = k === kids[kids.length - 1];
       const mine = lines.map((u) => u * W).filter((v) => v >= lo && (last ? v <= hi : v < hi)).map((v) => (v - pos) / k.start);
-      const d1 = k.endDir(S, E);
-      const res = limb(S, dir, E, d1, k.start, k.end, mine.length ? mine : [0], prefix + k.id);
+      const res = limb(S, dir, E, k.start, k.end, mine.length ? mine : [0], prefix + k.id, amp, prefix + 'w' + node.id, toLeaf);
+      // Arrivée dans l'axe du parent (g'(1) = 0) : les enfants repartent dans la même direction
+      const d1 = dir;
       k.endPt = E;
       if (k.kids.length) fork(k, E, d1, k.end, res.lines, target, prefix);
     }
@@ -585,8 +601,7 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
   drawGrain(hatchG, knotG, trunk.pts, trunk.perp, trunk.width, trunkLines, trunkLines, () => 0, 'tronc',
     { knots: [{ t: [0.7, 0.72], u: -0.24 }, { t: [0.86, 0.88], u: 0.24 }], knotChance: 1, rho: 0.13 });
 
-  // Racines (ascendants) : vers le haut des cartouches, en tendant vers le bas
-  (function dirs(n) { for (const k of n.kids) { k.endDir = (S, E) => unit({ x: (E.x - S.x) * 0.5, y: Math.abs(E.y - S.y) + 40 }); dirs(k); } })(anc);
+  // Racines (ascendants) : vers le haut des cartouches
   fork(anc, { x: 0, y: base }, { x: 0, y: 1 }, TB, trunkLines.map((u) => -u), (k) => ({ x: k.x, y: k.y - 26 }), 'r');
   // Radicelles
   (function rootlets(n) {
@@ -602,24 +617,16 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
     }
   })(anc);
 
-  // Branches (descendants) : les branches maîtresses montent, les rameaux s'étalent
-  (function dirs(n) {
-    for (const k of n.kids) {
-      k.endDir = k.kids.length
-        ? (S, E) => unit({ x: (E.x - S.x) * 0.35, y: -Math.abs(E.y - S.y) - 60 })
-        : () => ({ x: Math.cos(k.leafAngle), y: Math.sin(k.leafAngle) });
-      dirs(k);
-    }
-  })(desc);
+  // Branches (descendants)
   (function stems(n) { for (const k of n.kids) { if (!k.kids.length) setLeafAngle(k, n); stems(k); } })(desc);
   fork(desc, { x: 0, y: -T }, { x: 0, y: -1 }, TT, trunkLines, (k) => (k.kids.length ? { x: k.x, y: k.y + 16 } : k.stem), 'b');
 
   // Point d'attache du pétiole d'une feuille, et son orientation
   function setLeafAngle(k, parent) {
-    const dx = k.x - (parent.depth === 0 ? 0 : parent.x);
-    const side = dx >= 0 ? 1 : -1;
-    // Sur les côtés, la feuille s'étale vers l'extérieur ; au centre, elle se dresse
-    const ang = Math.abs(dx) > LEAF_L * 0.95 ? (side > 0 ? -0.35 : Math.PI + 0.35) : -Math.PI / 2 + side * 0.5;
+    // La feuille prolonge la direction qui va du rameau parent à elle (le pétiole arrive
+    // en droite ligne, sans crochet) ; jamais tournée vers le bas
+    const px = parent.depth === 0 ? 0 : parent.x, py = parent.depth === 0 ? -trunkH : parent.y + 16;
+    const ang = Math.max(-Math.PI + 0.35, Math.min(-0.35, Math.atan2(k.y - py, k.x - px)));
     k.leafAngle = ang;
     k.stem = { x: k.x - Math.cos(ang) * (LEAF_L / 2 + 6), y: k.y - Math.sin(ang) * (LEAF_L / 2 + 6) };
   }
@@ -677,15 +684,17 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
 
   // ----- Sol -----
   const groundG = el('g', { class: 'oak-ground' }, g);
-  let d = `M${bbox.x + 30} 2`;
+  // (interrompu au pied du tronc)
+  let d = '';
   const r = rng('sol');
-  for (let x = bbox.x + 30; x < bbox.x + bbox.w - 30; x += 40) d += `Q${x + 20} ${f2(-2 + r() * 6)} ${x + 40} ${f2(r() * 4)}`;
-  el('path', { d, class: 'oak-ground-line' }, groundG);
-  for (let x = bbox.x + 50; x < bbox.x + bbox.w - 50; x += 18 + r() * 30) {
-    if (Math.abs(x) < 110) continue;
-    const h = 6 + r() * 12;
-    el('path', { d: `M${f2(x)} 2l${f2(-3 - r() * 3)} -${f2(h)}M${f2(x + 3)} 2l${f2(r() * 4)} -${f2(h * 1.2)}M${f2(x + 6)} 2l${f2(3 + r() * 3)} -${f2(h * 0.8)}`, class: 'oak-grass' }, groundG);
+  for (const [x0, x1] of [[bbox.x + 30, -TB / 2 - 2], [TB / 2 + 2, bbox.x + bbox.w - 30]]) {
+    d += `M${f2(x0)} 2`;
+    for (let x = x0; x < x1; x += 40) {
+      const xe = Math.min(x + 40, x1);
+      d += `Q${f2((x + xe) / 2)} ${f2(-2 + r() * 6)} ${f2(xe)} ${f2(xe === x1 ? 2 : r() * 4)}`;
+    }
   }
+  el('path', { d, class: 'oak-ground-line' }, groundG);
   drawSurfaceLife(groundG, { x0: bbox.x + 50, x1: bbox.x + bbox.w - 50, ground: 2, avoid: [[-TB / 2 - 40, TB / 2 + 40]], seed: 'oak' + root.id });
 
   // ----- Cartouche du tronc : la personne choisie -----
