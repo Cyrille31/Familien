@@ -146,8 +146,7 @@ export function layoutAncestorsClose(anc) {
   for (let d = 1; d < rows.length; d++) {
     const desired = rows[d].map((n) => {
       const c = n.child;
-      if (c.kids.length === 1) return c.x;
-      return c.x + (c.kids.indexOf(n) === 0 ? -step / 2 : step / 2);
+      return c.x + (c.kids.indexOf(n) - (c.kids.length - 1) / 2) * step;
     });
     packRow(desired, step).forEach((x, i) => { rows[d][i].x = x; });
   }
