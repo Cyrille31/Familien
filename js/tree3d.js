@@ -39,6 +39,7 @@ function layout(db, rootId, ancDepth, descDepth) {
   const desc = buildDescendants(db, rootId, descDepth);
   const spouseId = spousesMainFirst(db, rootId)[0] || null;
   const ancA = buildAncestors(db, rootId, ancDepth);
+  ancA.kids.forEach((k) => { k.base = 'root'; });
   const anc = { id: rootId, kids: [...ancA.kids] };
   if (spouseId) {
     const ancB = buildAncestors(db, spouseId, ancDepth);
@@ -528,6 +529,26 @@ export async function mount3D(container, db, opts) {
   };
   (function f(n) { for (const k of n.kids) { hang(k, (k.kids.length ? 9 : 6.5) * U, 1); f(k); } })(desc);
   (function f(n) { for (const k of n.kids) { hang(k, 6.5 * U, -1); f(k); } })(anc);
+  // Couples d'ancêtres : arc entre les deux parents, avec la date du mariage (comme le chronologique)
+  const bondMat = keep(new THREE.LineBasicMaterial({ color: '#8a5a20', transparent: true, opacity: 0.85 }));
+  const bond = (a, b) => {
+    const A = a.pos, B = b.pos;
+    const M = A.clone().add(B).multiplyScalar(0.5);
+    const out = new THREE.Vector3(M.x, 0, M.z);
+    if (out.lengthSq() < 1e-6) out.set(Math.cos(a.angle), 0, Math.sin(a.angle)); else out.normalize();
+    const C = M.clone().addScaledVector(out, A.distanceTo(B) * 0.22 + 1);
+    C.y -= A.distanceTo(B) * 0.08;
+    const curve = new THREE.QuadraticBezierCurve3(A, C, B);
+    scene.add(new THREE.Line(keep(new THREE.BufferGeometry().setFromPoints(curve.getPoints(32))), bondMat));
+    const d = marriageDate(db, a.id, b.id);
+    const at = curve.getPoint(0.5).addScaledVector(out, 0.6);
+    addSign([{ text: d ? `∞ ${d}` : '∞', id: a.id, size: 30 }], at, 3.2 * U, { small: true });
+  };
+  (function couples(n, top) {
+    const groups = top ? [n.kids.filter((k) => k.base === 'root'), n.kids.filter((k) => k.base === 'spouse')] : [n.kids];
+    for (const grp of groups) if (grp.length === 2) bond(grp[0], grp[1]);
+    for (const k of n.kids) couples(k, false);
+  })(anc, true);
 
   // ----- Caméra et commandes -----
   const controls = new OrbitControls(camera, renderer.domElement);
