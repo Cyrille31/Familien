@@ -39,6 +39,16 @@ export function rng(seed) {
 }
 
 export const fit = (s, max) => (s.length > max ? s.slice(0, max - 1) + '…' : s);
+
+// Écrit le texte en entier : trop long pour `max` caractères, il est réduit
+// (jusqu'à 60 %) autour de son point d'ancrage ; au-delà seulement, il est tronqué.
+export function textFit(parent, x, y, str, cls, attrs, max) {
+  if (str.length <= max) return text(parent, x, y, str, cls, attrs);
+  const MIN = 0.6;
+  const sc = Math.max(MIN, max / str.length);
+  const s = sc > MIN ? str : fit(str, Math.floor(max / MIN));
+  return text(parent, 0, 0, s, cls, { ...attrs, transform: `translate(${f2(x)} ${f2(y)}) scale(${sc.toFixed(3)})` });
+}
 export const f2 = (n) => Math.round(n * 10) / 10;
 
 export function lifeSpan(p) {
@@ -715,14 +725,14 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
   el('path', { d: `M-118 ${cy - ph / 2 + 8}h236c-8 16 -8 ${ph - 32} 0 ${ph - 16}h-236c8 -16 8 ${-(ph - 32)} 0 ${-(ph - 16)}Z`, class: 'oak-plaque-inner' }, rg);
   // Le couple : le descendant au-dessus, la date de mariage, puis le conjoint
   const top = spId ? cy - 40 : cy - 8;
-  text(rg, 0, top, fit(root.name, 22), 'oak-script', { 'text-anchor': 'middle' });
+  textFit(rg, 0, top, root.name, 'oak-script', { 'text-anchor': 'middle' }, 22);
   text(rg, 0, top + 22, lifeSpan(root), 'oak-italic', { 'text-anchor': 'middle' });
   if (spId) {
     const sp = db.get(spId);
     text(rg, 0, cy + 14, marriage(root.id, spId), 'oak-italic', { 'text-anchor': 'middle' });
     const sg = el('g', { class: 't-person oak-person', 'data-id': spId }, g);
     el('rect', { x: -120, y: cy + 22, width: 240, height: 54, fill: 'transparent' }, sg);
-    text(sg, 0, cy + 46, fit(sp.name, 22), 'oak-script', { 'text-anchor': 'middle' });
+    textFit(sg, 0, cy + 46, sp.name, 'oak-script', { 'text-anchor': 'middle' }, 22);
     text(sg, 0, cy + 68, lifeSpan(sp), 'oak-small', { 'text-anchor': 'middle' });
   }
 
@@ -734,13 +744,13 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
   // ---------- Éléments graphiques ----------
 
   function label(grp, x, y, p, spouses) {
-    const lines = [fit(p.name, 22), lifeSpan(p), fit(spouseLine(db, spouses), 26)].filter(Boolean);
+    const lines = [p.name, lifeSpan(p), spouseLine(db, spouses)].filter(Boolean);
     const top = y - (lines.length - 1) * 8 + 4;
     el('rect', { x: x - LEAF_L / 2, y: y - LEAF_H / 2, width: LEAF_L, height: LEAF_H, fill: 'transparent' }, grp);
     lines.forEach((s, i) => {
       // La ligne du conjoint ouvre la fiche du conjoint
-      const into = i === 2 ? spouseGroup(grp, spouses[0], x, top + i * 16, s.length * 6.5) : grp;
-      text(into, x, top + i * 16, s, i === 0 ? 'oak-name' : 'oak-small', { 'text-anchor': 'middle' });
+      const into = i === 2 ? spouseGroup(grp, spouses[0], x, top + i * 16, Math.min(s.length, 26) * 6.5) : grp;
+      textFit(into, x, top + i * 16, s, i === 0 ? 'oak-name' : 'oak-small', { 'text-anchor': 'middle' }, i === 0 ? 22 : 26);
     });
   }
 
@@ -750,7 +760,7 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
   }
 
   function ribbon(grp, x, y, p, spouses) {
-    const name = fit(p.name, 22);
+    const name = p.name;
     const w = Math.max(110, Math.min(200, name.length * 8.6 + 34));
     const h = 26;
     const l = x - w / 2, t = y - h / 2;
@@ -759,11 +769,11 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
     el('path', { d: `M${l + w - 6} ${t + 8}h22l-8 ${h / 2}l8 ${h / 2}h-22Z`, class: 'oak-ribbon-tail' }, grp);
     el('path', { d: `M${l} ${t}Q${x} ${t - 7} ${l + w} ${t}v${h}Q${x} ${t + h - 7} ${l} ${t + h}Z`, class: 'oak-ribbon' }, grp);
     el('rect', { x: l - 16, y: t - 8, width: w + 32, height: h + 50, fill: 'transparent' }, grp);
-    text(grp, x, y + 2, name, 'oak-name', { 'text-anchor': 'middle' });
-    const sub = [lifeSpan(p), ...(spouses.length ? [marriage(p.id, spouses[0]), fit(db.get(spouses[0]).name + (spouses.length > 1 ? ` (+${spouses.length - 1})` : ''), 28)] : [])];
+    textFit(grp, x, y + 2, name, 'oak-name', { 'text-anchor': 'middle' }, 19);
+    const sub = [lifeSpan(p), ...(spouses.length ? [marriage(p.id, spouses[0]), db.get(spouses[0]).name + (spouses.length > 1 ? ` (+${spouses.length - 1})` : '')] : [])];
     sub.forEach((s, i) => {
-      const into = i === 2 ? spouseGroup(grp, spouses[0], x, y + 30 + i * 15, s.length * 6.5) : grp;
-      text(into, x, y + 30 + i * 15, s, 'oak-small oak-halo', { 'text-anchor': 'middle' });
+      const into = i === 2 ? spouseGroup(grp, spouses[0], x, y + 30 + i * 15, Math.min(s.length, 28) * 6.5) : grp;
+      textFit(into, x, y + 30 + i * 15, s, 'oak-small oak-halo', { 'text-anchor': 'middle' }, 28);
     });
   }
 
@@ -778,7 +788,7 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
     const w = NODE_W, h = 58;
     el('rect', { x: x - w / 2, y: y - h / 2, width: w, height: h, rx: 26, class: 'oak-plaque' }, grp);
     el('rect', { x: x - w / 2 + 5, y: y - h / 2 + 5, width: w - 10, height: h - 10, rx: 21, class: 'oak-plaque-inner' }, grp);
-    text(grp, x, y - 2, fit(p.name, 20), 'oak-name', { 'text-anchor': 'middle' });
+    textFit(grp, x, y - 2, p.name, 'oak-name', { 'text-anchor': 'middle' }, 20);
     text(grp, x, y + 16, lifeSpan(p), 'oak-small', { 'text-anchor': 'middle' });
     if (more) text(grp, x, y + h / 2 + 14, '…', 'oak-small', { 'text-anchor': 'middle' });
   }
