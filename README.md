@@ -18,6 +18,7 @@ Tapez le nom d'une personne : Familien affiche son **arbre complet**, avec tous 
   - *Compacte*, idéale sur téléphone : descendants en liste verticale, ancêtres « en escalier » (côté paternel à gauche, maternel à droite), les deux parents juste au-dessus de la personne.
   - *Chêne* : l'arbre dessiné comme une gravure ancienne, ancêtres dans les racines, enfants dans les branches, dernière génération dans les feuilles, en calligraphie (polices IM Fell English et Pinyon Script, licence SIL OFL, dans `fonts/`).
   - *Chronologique* : éventail des descendants au-dessus, racines des ancêtres en dessous, et des cercles d'années (tous les 5, 10, 20 ou 25 ans) : les cousins nés la même année sont sur le même cercle ; les années inconnues sont estimées (~). Les couples sont réunis (descendant, date de mariage, conjoint) sur le tronc et à chaque nœud ; quatre racines partent du tronc (parents de la personne et de son conjoint) ; les branches se partagent la largeur de leur branche mère, sans raccord, et les nervures se prolongent du tronc jusqu'aux rameaux. Tronc et branches légèrement sinueux, avec des nœuds ; sous le sol, une coupe de terrain (strates, cailloux, vers de terre) et, à la surface, herbes, fleurs, fougères, champignons, un escargot et un lapin.
+  - *3D* : l'arbre chronologique en volume, à faire tourner du doigt (ou à la souris) et à zoomer en pinçant. La hauteur suit l'année de naissance, avec les cercles d'années ; les familles se répartissent tout autour du tronc et les ancêtres forment les racines, sous le sol. Un écriteau en bois est suspendu à chaque embranchement (descendant, date de mariage, conjoint) ; le toucher rapproche la caméra et ouvre la fiche (celle du conjoint si l'on touche son nom). Le bouton d'export enregistre l'image vue à l'écran.
 - **Lien entre deux personnes** : dans la fiche d'une personne, « Lien avec une autre personne… », puis choisir la 2e. L'application affiche uniquement le chemin qui les relie (ancêtre commun le plus proche, sinon descendant commun, sinon alliance) et nomme le lien (frère, nièce, cousin germain, grand-oncle…).
 - Zoom au doigt (pincer) ou à la molette, nombre de générations réglable, export de l'arbre en image PNG ou SVG (pour imprimer).
 - Thème clair / sombre automatique.
@@ -106,6 +107,7 @@ Application web progressive (PWA) sans dépendance ni compilation : HTML, CSS et
 - `js/importers.js` : import d'un fichier .csv ou d'une page Google Sheets enregistrée (.mht, .html)
 - `js/oak.js` : vue « chêne » (gravure)
 - `js/chrono.js` : vue chronologique (cercles d'années)
+- `js/tree3d.js` : vue 3D (chargée à la demande) ; `js/vendor/` : Three.js r170 et OrbitControls (licence MIT)
 - `js/relation.js` : lien de parenté entre deux personnes
 - `js/storage.js` : enregistrement local (IndexedDB)
 - `sw.js` : service worker pour le fonctionnement hors ligne (augmenter `VERSION` à chaque modification)
