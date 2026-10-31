@@ -9,7 +9,7 @@ import { findRelation } from './relation.js';
 import { computeOak, exportOakSvg, OAK_STYLE } from './oak.js';
 import { computeChrono, CHRONO_STYLE } from './chrono.js';
 
-const APP_VERSION = '1.12.6';
+const APP_VERSION = '1.13.0';
 // Fichier de la famille proposé par défaut au premier lancement
 const DEFAULT_URL = 'https://docs.google.com/spreadsheets/d/1GVpEFBoonQ2M5ZG7dK4_bNW2w1BkZXE9ZupN6cHlXYM/edit';
 // Identifiant client Google (OAuth) pour lire le fichier privé avec son compte Google.
@@ -221,7 +221,40 @@ const VIEWS = {
   compact: { label: 'Vue compacte : descendants en liste, ancêtres en escalier' },
   oak: { label: 'Vue « chêne » : ancêtres dans les racines, descendants dans les branches et les feuilles' },
   chrono: { label: 'Vue chronologique : cercles d’années, les cousins nés la même année sur le même cercle' },
+  tree3d: { label: 'Vue 3D : faites tourner l’arbre du doigt, pincez pour zoomer, touchez un écriteau pour ouvrir la fiche' },
 };
+
+// Vue 3D : chargée seulement quand on la choisit (bibliothèque Three.js)
+const stage3d = $('stage3d');
+let view3d = null, build3d = 0;
+function close3D() {
+  build3d++;
+  if (view3d) { view3d.dispose(); view3d = null; }
+  stage3d.hidden = true;
+}
+async function render3D(p, fit) {
+  const ticket = ++build3d;
+  if (view3d && !fit) return;
+  if (view3d) { view3d.dispose(); view3d = null; }
+  stage3d.hidden = false;
+  svg.style.visibility = 'hidden';
+  viewport.textContent = '';
+  try {
+    const { mount3D } = await import('./tree3d.js');
+    if (ticket !== build3d) return;
+    const v = await mount3D(stage3d, state.db, {
+      rootId: state.rootId, ancDepth: state.ancDepth, descDepth: state.descDepth, step: state.ringStep,
+      onPick: (id) => (state.pickFrom ? showRelation(state.pickFrom, id) : showPerson(id)),
+    });
+    if (ticket !== build3d) { v.dispose(); return; }
+    view3d = v;
+    state.tree = { three: true, ancCount: v.ancCount, descCount: v.descCount };
+    $('treeInfo').textContent = `${p.name} · ${v.ancCount} ascendant${v.ancCount > 1 ? 's' : ''} · ${v.descCount} descendant${v.descCount > 1 ? 's' : ''}`;
+  } catch (e) {
+    console.error(e);
+    toast('La vue 3D n’est pas disponible sur cet appareil.', { duration: 6000 });
+  }
+}
 
 function renderTree(fit) {
   if (state.relation) return renderRelation(fit);
@@ -232,7 +265,13 @@ function renderTree(fit) {
   svg.style.visibility = has ? 'visible' : 'hidden';
   $('toolbar').hidden = !has;
   $('treeInfo').hidden = !has;
-  if (!has) { viewport.textContent = ''; renderEmpty(); return; }
+  if (!has) { close3D(); viewport.textContent = ''; renderEmpty(); return; }
+  if (state.view === 'tree3d') {
+    const p = state.db.get(state.rootId);
+    document.title = `${p.name} – Familien`;
+    return render3D(p, fit);
+  }
+  close3D();
   state.tree = state.view === 'compact' ? computeCompactTree(state.db, state.rootId, state.ancDepth, state.descDepth)
     : state.view === 'oak' ? computeOak(state.db, state.rootId, state.ancDepth, state.descDepth)
     : state.view === 'chrono' ? computeChrono(state.db, state.rootId, state.ancDepth, state.descDepth, state.ringStep)
@@ -281,6 +320,7 @@ function renderRelation(fit) {
   const rel = findRelation(state.db, a, b);
   if (!rel) { state.relation = null; return renderTree(fit); }
   document.body.classList.add('relation-mode');
+  close3D();
   $('empty').hidden = true;
   $('toolbar').hidden = false;
   $('treeInfo').hidden = true;
@@ -609,15 +649,15 @@ $('btnClear').onclick = async () => {
 
 // ---------- Barre d'outils de l'arbre ----------
 
-$('zoomIn').onclick = () => pz.zoomCenter(1.25);
-$('zoomOut').onclick = () => pz.zoomCenter(0.8);
+$('zoomIn').onclick = () => (view3d ? view3d.zoom(1.25) : pz.zoomCenter(1.25));
+$('zoomOut').onclick = () => (view3d ? view3d.zoom(0.8) : pz.zoomCenter(0.8));
 function setView(view) {
   if (!VIEWS[view]) view = 'tree';
   state.view = view;
   prefs.set('view', view);
   $('viewSelect').value = view;
   $('viewSelect').title = VIEWS[view].label;
-  $('ringStepWrap').hidden = view !== 'chrono';
+  $('ringStepWrap').hidden = view !== 'chrono' && view !== 'tree3d';
 }
 $('viewSelect').onchange = (e) => {
   setView(e.target.value);
@@ -626,7 +666,7 @@ $('viewSelect').onchange = (e) => {
 };
 $('relClose').onclick = closeRelation;
 $('ringStep').onchange = (e) => { state.ringStep = Number(e.target.value); prefs.set('ringStep', state.ringStep); renderTree(true); };
-$('zoomFit').onclick = () => state.tree && pz.fit(state.tree.bbox);
+$('zoomFit').onclick = () => (view3d ? view3d.fit() : state.tree && pz.fit(state.tree.bbox));
 $('ancDepth').onchange = (e) => { state.ancDepth = Number(e.target.value); prefs.set('anc', state.ancDepth); renderTree(true); };
 $('descDepth').onchange = (e) => { state.descDepth = Number(e.target.value); prefs.set('desc', state.descDepth); renderTree(true); };
 
@@ -653,7 +693,11 @@ async function saveBlob(blob, filename) {
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
 }
 
-$('btnExport').onclick = () => $('dlgExport').showModal();
+$('btnExport').onclick = async () => {
+  // Vue 3D : on enregistre l'image telle qu'on la voit
+  if (view3d) { const blob = await view3d.snapshot(); if (blob) await saveBlob(blob, fileBase() + '-3d.png'); return; }
+  $('dlgExport').showModal();
+};
 $('expSvg').onclick = async () => {
   $('dlgExport').close();
   const s = state.tree.oak ? await exportOakSvg(state.db, state.tree) : exportSvgString(state.db, state.tree);
