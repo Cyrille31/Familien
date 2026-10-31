@@ -439,6 +439,16 @@ function truncate(s, max) {
   return s.length > max ? s.slice(0, max - 1) + '…' : s;
 }
 
+// Texte en entier dans la carte : réduit s'il dépasse `max` caractères
+// (jusqu'à 60 %), tronqué seulement au-delà.
+function fitText(box, x, y, str, cls, max) {
+  const t = el('text', { x, y, class: cls }, box);
+  if (str.length <= max) { t.textContent = str; return; }
+  const sc = Math.max(0.6, max / str.length);
+  t.textContent = sc > 0.6 ? str : truncate(str, Math.floor(max / 0.6));
+  t.setAttribute('transform', `translate(${x} ${y}) scale(${sc.toFixed(3)}) translate(${-x} ${-y})`);
+}
+
 function lifeLine(p) {
   const b = p.birthYear || p.birthDate || '';
   const unknownDeath = p.deceased && !p.deathYear && /inconnue/.test(p.deathDate);
@@ -470,14 +480,19 @@ export function renderInto(g, db, tree) {
     el('rect', { width: BOX_W, height: BOX_H, rx: 12, class: 't-card' }, box);
     el('rect', { width: 6, height: BOX_H - 20, x: 0, y: 10, rx: 3, class: 't-band' }, box);
     const hasLast = p.firstName && p.lastName;
-    const t1 = el('text', { x: 16, y: hasLast ? 25 : 31, class: 't-first' }, box);
-    t1.textContent = truncate(hasLast ? p.firstName : p.name, 20);
-    if (hasLast) {
-      const t2 = el('text', { x: 16, y: 44, class: 't-last' }, box);
-      t2.textContent = truncate(p.lastName.toUpperCase(), 19);
+    let lastLines = hasLast ? [p.lastName.toUpperCase()] : [];
+    // Nom de famille trop long : réparti sur deux lignes, à l'espace le plus central
+    if (lastLines.length && lastLines[0].length > 26) {
+      const n = lastLines[0], mid = n.length / 2;
+      let cut = -1;
+      for (let i = 0; i < n.length; i++) if (n[i] === ' ' && (cut < 0 || Math.abs(i - mid) < Math.abs(cut - mid))) cut = i;
+      if (cut > 0) lastLines = [n.slice(0, cut), n.slice(cut + 1)];
     }
+    const two = lastLines.length === 2;
+    fitText(box, 16, hasLast ? (two ? 21 : 25) : 31, hasLast ? p.firstName : p.name, 't-first', 20);
+    lastLines.forEach((s, i) => fitText(box, 16, two ? 37 + i * 12 : 44, s, 't-last', 19));
     const life = lifeLine(p);
-    if (life) el('text', { x: 16, y: 62, class: 't-life' }, box).textContent = life;
+    if (life) el('text', { x: 16, y: two ? 65 : 62, class: 't-life' }, box).textContent = life;
     if (b.more) {
       const arrow = el('text', { x: BOX_W - 14, y: b.more === 'up' ? 18 : BOX_H - 8, class: 't-more' }, box);
       arrow.textContent = b.more === 'up' ? '▲' : '▼';

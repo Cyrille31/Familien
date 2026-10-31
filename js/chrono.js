@@ -293,10 +293,17 @@ function renderChrono(g, db, o) {
   const labelG = el('g', {}, g);
   const CH = 6.3;
   const yr = (k) => `${k.est ? '~' : ''}${k.year}`;
-  const shorten = (k, p, room) => {
-    const options = [`${p.name} ${yr(k)}`, `${p.firstName || p.name} ${yr(k)}`, p.firstName || p.name];
-    return options.find((s) => s.length * CH <= room) || fit(options[2], Math.max(3, Math.floor(room / CH)));
+  // Le nom complet est gardé : texte un peu réduit (80 %) avec l'année, puis sans,
+  // puis réduit jusqu'à 55 % ; en dernier recours seulement, il est tronqué.
+  const MIN = 0.55;
+  const sized = (opts, room) => {
+    for (const o of opts) if (o.length * CH * 0.8 <= room) return [o, Math.min(1, room / (o.length * CH))];
+    const last = opts[opts.length - 1];
+    const sc = room / (last.length * CH);
+    if (sc >= MIN) return [last, sc];
+    return [fit(last, Math.max(3, Math.floor(room / (CH * MIN)))), MIN];
   };
+  const shorten = (k, p, room) => sized([`${p.name} ${yr(k)}`, p.name], room);
   // Bout de branche : le nom file vers l'extérieur. Nœud : le nom est écrit le long
   // de la branche qui y arrive (entre le parent et le nœud), pour ne pas couvrir les enfants.
   const place = (center, k, couple, parentR) => {
@@ -315,22 +322,23 @@ function renderChrono(g, db, o) {
       const sp = db.get(spouses[0]);
       const spLine = sp.name + (sp.birthYear ? ' ' + sp.birthYear : '') + (spouses.length > 1 ? ` (+${spouses.length - 1})` : '');
       lines = [
-        [shorten(k, p, room), 'ch-name', -13],
-        [marriageText(db, k.id, spouses[0]), 'ch-date', 1],
-        [room < 400 ? fit(spLine, Math.max(4, Math.floor(room / CH))) : spLine, 'ch-name spouse', 15],
+        [...shorten(k, p, room), 'ch-name', -13],
+        [marriageText(db, k.id, spouses[0]), 1, 'ch-date', 1],
+        [...sized([spLine, sp.name], room), 'ch-name spouse', 15],
       ];
-    } else lines = [[shorten(k, p, room), 'ch-name', 4]];
-    const w = Math.max(...lines.map((l) => l[0].length)) * CH + 10;
+    } else lines = [[...shorten(k, p, room), 'ch-name', 4]];
+    const w = Math.max(...lines.map((l) => l[0].length * CH * l[1])) + 10;
     el('rect', { x: toEnd ? -w : 0, y: spouses.length ? -24 : -9, width: w, height: spouses.length ? 46 : 16, fill: 'transparent' }, grp);
-    for (const [s, cls, y] of lines) {
+    for (const [s, sc, cls, y] of lines) {
       // La ligne du conjoint ouvre la fiche du conjoint, pas celle du descendant
       let into = grp;
       if (cls === 'ch-name spouse') {
         into = el('g', { class: 't-person ch-person', 'data-id': spouses[0] }, grp);
-        const sw = s.length * CH + 10;
+        const sw = s.length * CH * sc + 10;
         el('rect', { x: toEnd ? -sw : 0, y: y - 11, width: sw, height: 15, fill: 'transparent' }, into);
       }
-      text(into, 0, y, s, k.est && cls === 'ch-name' ? cls + ' est' : cls, anchor);
+      const size = sc < 1 ? { style: `font-size:${f2(13 * sc)}px` } : {};
+      text(into, 0, y, s, k.est && cls === 'ch-name' ? cls + ' est' : cls, { ...anchor, ...size });
     }
     const dot = P(center, k.r, a);
     el('circle', { cx: f2(dot.x), cy: f2(dot.y), r: 3.2, class: 'ch-dot' }, labelG);
