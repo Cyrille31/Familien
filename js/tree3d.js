@@ -508,7 +508,7 @@ export async function mount3D(container, db, opts) {
   // Embranchements : écriteau suspendu sous la fourche, un peu vers l'extérieur
   const hang = (k, size, dirY) => {
     const out = new THREE.Vector3(Math.cos(k.angle), 0, Math.sin(k.angle));
-    const lines = dirY > 0 && k.kids.length ? coupleLines(k)
+    const lines = dirY > 0 ? coupleLines(k)
       : [{ text: db.get(k.id).name, id: k.id, size: 36 }, { text: life(db.get(k.id), k.est), id: k.id, italic: true, size: 28 }].filter((l) => l.text);
     const leaf = !k.kids.length;
     const at = k.pos.clone();
