@@ -9,7 +9,7 @@ import { findRelation } from './relation.js';
 import { computeOak, exportOakSvg, OAK_STYLE } from './oak.js';
 import { computeChrono, CHRONO_STYLE } from './chrono.js';
 
-const APP_VERSION = '1.13.2';
+const APP_VERSION = '1.13.3';
 // Fichier de la famille proposé par défaut au premier lancement
 const DEFAULT_URL = 'https://docs.google.com/spreadsheets/d/1GVpEFBoonQ2M5ZG7dK4_bNW2w1BkZXE9ZupN6cHlXYM/edit';
 // Identifiant client Google (OAuth) pour lire le fichier privé avec son compte Google.
@@ -252,7 +252,7 @@ async function render3D(p, fit) {
     $('treeInfo').textContent = `${p.name} · ${v.ancCount} ascendant${v.ancCount > 1 ? 's' : ''} · ${v.descCount} descendant${v.descCount > 1 ? 's' : ''}`;
   } catch (e) {
     console.error(e);
-    toast('La vue 3D n’est pas disponible sur cet appareil.', { duration: 6000 });
+    toast(`La vue 3D n’a pas pu s’afficher sur cet appareil (${e && e.message ? e.message : e}).`, { duration: 9000 });
   }
 }
 
