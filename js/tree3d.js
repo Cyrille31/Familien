@@ -244,11 +244,25 @@ function barkTexture() {
   return t;
 }
 
+// Un seul canevas sert à mesurer le texte (Safari limite la mémoire des canevas)
+const measure = document.createElement('canvas').getContext('2d');
+
+// Rectangle arrondi (roundRect n'existe pas avant iOS 16)
+function rounded(x, X, Y, W, H, r) {
+  x.beginPath();
+  x.moveTo(X + r, Y);
+  x.arcTo(X + W, Y, X + W, Y + H, r);
+  x.arcTo(X + W, Y + H, X, Y + H, r);
+  x.arcTo(X, Y + H, X, Y, r);
+  x.arcTo(X, Y, X + W, Y, r);
+  x.closePath();
+}
+
 // Écriteau en bois avec quelques lignes de texte.
 function plank(lines, opts = {}) {
   const S = opts.small ? 1.1 : 1.4; // résolution (mémoire limitée sur téléphone)
   const pad = 22, lh = opts.small ? 34 : 40;
-  const ctx0 = document.createElement('canvas').getContext('2d');
+  const ctx0 = measure;
   const fontOf = (l) => `${l.italic ? 'italic ' : ''}${l.size || (opts.small ? 30 : 34)}px ${FONT}`;
   let w = 0;
   for (const l of lines) { ctx0.font = fontOf(l); w = Math.max(w, ctx0.measureText(l.text).width); }
@@ -261,7 +275,7 @@ function plank(lines, opts = {}) {
   x.scale(S, S);
   // Planche
   const r = 12;
-  x.beginPath(); x.roundRect(3, 3, w - 6, h - 6, r);
+  rounded(x, 3, 3, w - 6, h - 6, r);
   const grd = x.createLinearGradient(0, 0, 0, h);
   grd.addColorStop(0, opts.root ? '#e9d3a0' : '#dcc08a'); grd.addColorStop(1, opts.root ? '#d5b57a' : '#c7a46b');
   x.fillStyle = grd; x.fill();
@@ -321,7 +335,7 @@ export async function mount3D(container, db, opts) {
   const U = (L.maxR / 70) * Math.max(1, Math.min(2.2, 2.4 - n / 80));
  // taille des écriteaux, proportionnelle à l'arbre
 
-  const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   container.appendChild(renderer.domElement);
@@ -460,6 +474,9 @@ export async function mount3D(container, db, opts) {
   const addSign = (lines, at, size, o = {}) => {
     const p = plank(lines, o);
     keep(p.tex);
+    // Envoi immédiat à la carte graphique : le canevas est libéré aussitôt
+    // (sinon les ~200 écriteaux dépassent la mémoire permise par Safari)
+    renderer.initTexture(p.tex);
     const mat = keep(new THREE.SpriteMaterial({ map: p.tex, alphaTest: 0.2 }));
     const sp = new THREE.Sprite(mat);
     const W = size, H = (size * p.h) / p.w;
