@@ -128,8 +128,27 @@ function layout(db, rootId, ancDepth, descDepth) {
 class WoodBuilder {
   constructor() { this.pos = []; this.nor = []; this.uv = []; this.idx = []; }
   // radius : nombre (r0) ou fonction t → rayon ; v0 : départ de la texture
-  tube(curve, r0, r1, segs = 20, radial = 8, v0 = 0) {
-    const frames = curve.computeFrenetFrames(segs, false);
+  // Repères transportés le long de la courbe, en partant de la normale N0 :
+  // une branche fille reprend la normale de sa mère, les facettes se raccordent.
+  static frames(curve, segs, N0) {
+    const tangents = [], normals = [], binormals = [];
+    const q = new THREE.Quaternion();
+    for (let i = 0; i <= segs; i++) tangents.push(curve.getTangentAt(i / segs).normalize());
+    let N = N0 ? N0.clone() : new THREE.Vector3(1, 0, 0);
+    const T0 = tangents[0];
+    N.addScaledVector(T0, -N.dot(T0));
+    if (N.lengthSq() < 1e-6) N.set(0, 0, 1).addScaledVector(T0, -T0.z);
+    N.normalize();
+    for (let i = 0; i <= segs; i++) {
+      if (i) { q.setFromUnitVectors(tangents[i - 1], tangents[i]); N = N.clone().applyQuaternion(q).normalize(); }
+      normals.push(N);
+      binormals.push(tangents[i].clone().cross(N).normalize());
+    }
+    return { tangents, normals, binormals };
+  }
+  tube(curve, r0, r1, segs = 20, radial = 8, v0 = 0, startCap = false, N0 = null) {
+    const frames = WoodBuilder.frames(curve, segs, N0);
+    this.endNormal = frames.normals[segs];
     const len = curve.getLength();
     const base = this.pos.length / 3;
     const P = new THREE.Vector3(), N = new THREE.Vector3();
@@ -149,9 +168,34 @@ class WoodBuilder {
     for (let i = 0; i < segs; i++) {
       for (let j = 0; j < radial; j++) {
         const a = base + i * (radial + 1) + j, b = a + radial + 1;
-        this.idx.push(a, b, a + 1, b, b + 1, a + 1);
+        this.idx.push(a, a + 1, b, b, a + 1, b + 1); // faces tournées vers l'extérieur
       }
     }
+    // Bout arrondi (et départ fermé pour le tronc) : pas de tube ouvert
+    const radiusAt = (t) => (typeof r0 === 'function' ? r0(t) : r0 + (r1 - r0) * t * t * (3 - 2 * t));
+    const cap = (i, sign) => {
+      const t = i / segs, r = radiusAt(t);
+      const T = frames.tangents[i].clone().multiplyScalar(sign);
+      curve.getPointAt(t, P);
+      const start = this.pos.length / 3;
+      for (let j = 0; j <= radial; j++) {
+        const k = (base + i * (radial + 1) + j) * 3;
+        this.pos.push(this.pos[k], this.pos[k + 1], this.pos[k + 2]);
+        N.set(this.nor[k], this.nor[k + 1], this.nor[k + 2]).add(T).normalize();
+        this.nor.push(N.x, N.y, N.z);
+        this.uv.push((j / radial) * 2, v0 + (t * len) / 6);
+      }
+      const c = this.pos.length / 3;
+      this.pos.push(P.x + T.x * r * 0.7, P.y + T.y * r * 0.7, P.z + T.z * r * 0.7);
+      this.nor.push(T.x, T.y, T.z);
+      this.uv.push(1, v0 + (t * len) / 6 + r / 6);
+      for (let j = 0; j < radial; j++) {
+        if (sign > 0) this.idx.push(start + j, start + j + 1, c);
+        else this.idx.push(start + j + 1, start + j, c);
+      }
+    };
+    cap(segs, 1);
+    if (startCap) cap(0, -1);
   }
   geometry() {
     const g = new THREE.BufferGeometry();
@@ -169,10 +213,10 @@ class WoodBuilder {
 // la vue chronologique), part dans le prolongement de la mère (tangente T),
 // puis s'incline vers son nœud ; elle y arrive avec la tangente E, que ses
 // propres branches filles prolongeront.
-function branchCurve(S, T, B, E) {
+function branchCurve(S, T, B, E, minAlong = 0.12) {
   const L = S.distanceTo(B);
   // Départ d'autant plus court que la branche doit tourner (pas de boucle)
-  const along = Math.max(0.12, B.clone().sub(S).normalize().dot(T));
+  const along = Math.max(minAlong, B.clone().sub(S).normalize().dot(T));
   return new THREE.CubicBezierCurve3(S.clone(), S.clone().addScaledVector(T, L * 0.38 * along),
     B.clone().addScaledVector(E, -L * 0.3), B.clone());
 }
@@ -300,13 +344,16 @@ export async function mount3D(container, db, opts) {
     new THREE.Vector3(0, -2, 0), new THREE.Vector3(0.6, BASE * 0.35, 0.3),
     new THREE.Vector3(-0.4, BASE * 0.7, -0.2), new THREE.Vector3(0, BASE, 0),
   ]);
-  wood.tube(trunk, L.trunkR * 1.12, desc.r1, 24, 14);
+  const RAD = 14; // facettes autour de chaque branche (identique partout, pour les raccords)
+  wood.tube(trunk, L.trunkR * 1.12, desc.r1, 24, RAD, 0, true, new THREE.Vector3(1, 0, 0));
+  desc.N = wood.endNormal;
   desc.T = trunk.getTangentAt(1).normalize();
   desc.v = WoodBuilder.length(trunk);
   anc.T = new THREE.Vector3(0, -1, 0);
   anc.pos = new THREE.Vector3(0, -1.5, 0);
   anc.r1 = L.trunkR * 1.12;
   anc.v = 0;
+  anc.N = new THREE.Vector3(1, 0, 0);
   const ss = (t) => t * t * (3 - 2 * t);
   // Chaque branche fille naît exactement dans le prolongement de sa mère, avec la
   // même section : le bois est continu. Elle s'affine en s'écartant de ses sœurs.
@@ -317,10 +364,12 @@ export async function mount3D(container, db, opts) {
       const E = k.pos.clone().sub(n.pos).normalize().multiplyScalar(1 - 0.8 * f).addScaledVector(UP, dirY * (0.7 + 1.5 * f)).normalize();
       k.T = E;
       const S = n.pos.clone().addScaledVector(n.T, -n.r1 * 0.3);
-      const curve = branchCurve(S, n.T, k.pos, E);
+      // Les racines plongent d'abord avant de s'étaler (pas de coude à angle droit)
+      const curve = branchCurve(S, n.T, k.pos, E, dirY < 0 ? 0.4 : 0.12);
       const R = n.r1, a = k.r0, b = k.r1;
       const rad = (t) => (t < 0.18 ? R + (a - R) * ss(t / 0.18) : a + (b - a) * ss((t - 0.18) / 0.82));
-      wood.tube(curve, rad, 0, 26, k.kids.length ? 10 : 6, n.v);
+      wood.tube(curve, rad, 0, 26, k.kids.length || n.r1 > 0.6 ? RAD : 7, n.v, false, n.N);
+      k.N = wood.endNormal;
       k.v = n.v + WoodBuilder.length(curve);
       grow(k, dirY);
     }
@@ -501,7 +550,7 @@ export async function mount3D(container, db, opts) {
   const ro = new ResizeObserver(resize);
   ro.observe(container);
 
-  if (globalThis.__FAMILIEN_DEBUG) globalThis.__FAMILIEN_DEBUG.three = { camera, controls, L };
+  if (globalThis.__FAMILIEN_DEBUG) globalThis.__FAMILIEN_DEBUG.three = { camera, controls, L, scene };
 
   // ----- Toucher un écriteau : ouvre la fiche (le conjoint, s'il est touché) -----
   const ray = new THREE.Raycaster();
