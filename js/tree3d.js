@@ -90,9 +90,11 @@ function layout(db, rootId, ancDepth, descDepth) {
   const KV = Math.max(0.6, (0.95 * crown) / span);
   const BASE = Math.max(12, crown * 0.3);
   const rD = (y) => R0 + (y - y0) * KR;
+  // Les racines s'étalent au moins autant que la moitié de la couronne
+  KRa = Math.max(KRa, (0.6 * (R0 + KR * span)) / spanA);
   const rA = (y) => R0 + (y0 - y) * KRa;
   const hD = (y) => BASE + (y - y0) * KV;
-  const hA = (y) => -6 - (y0 - y) * KV * 0.8;
+  const hA = (y) => -6 - (y0 - y) * Math.min(KV * 0.6, KRa * 0.9);
 
   let descCount = 0, ancCount = 0, maxR = 30, top = BASE, bottom = 0;
   const place = (k, r, h) => {
@@ -125,7 +127,8 @@ function layout(db, rootId, ancDepth, descDepth) {
 
 class WoodBuilder {
   constructor() { this.pos = []; this.nor = []; this.uv = []; this.idx = []; }
-  tube(curve, r0, r1, segs = 20, radial = 8) {
+  // radius : nombre (r0) ou fonction t → rayon ; v0 : départ de la texture
+  tube(curve, r0, r1, segs = 20, radial = 8, v0 = 0) {
     const frames = curve.computeFrenetFrames(segs, false);
     const len = curve.getLength();
     const base = this.pos.length / 3;
@@ -133,14 +136,14 @@ class WoodBuilder {
     for (let i = 0; i <= segs; i++) {
       const t = i / segs;
       curve.getPointAt(t, P);
-      const r = r0 + (r1 - r0) * t * t * (3 - 2 * t);
+      const r = typeof r0 === 'function' ? r0(t) : r0 + (r1 - r0) * t * t * (3 - 2 * t);
       const nT = frames.normals[i], bT = frames.binormals[i];
       for (let j = 0; j <= radial; j++) {
         const a = (j / radial) * Math.PI * 2;
         N.copy(nT).multiplyScalar(Math.cos(a)).addScaledVector(bT, Math.sin(a));
         this.pos.push(P.x + N.x * r, P.y + N.y * r, P.z + N.z * r);
         this.nor.push(N.x, N.y, N.z);
-        this.uv.push((j / radial) * 2, (t * len) / 6);
+        this.uv.push((j / radial) * 2, v0 + (t * len) / 6);
       }
     }
     for (let i = 0; i < segs; i++) {
@@ -158,15 +161,20 @@ class WoodBuilder {
     g.setIndex(this.idx);
     return g;
   }
+  static length(curve) { return curve.getLength() / 6; }
 }
 
-// Branche : part du nœud parent vers le haut (ou le bas pour les racines),
-// puis s'incline doucement vers le nœud enfant.
-function branchCurve(A, B, dirY) {
-  const dy = Math.abs(B.y - A.y);
-  const c1 = new THREE.Vector3(A.x, A.y + dirY * dy * 0.45, A.z);
-  const c2 = new THREE.Vector3(A.x + (B.x - A.x) * 0.75, B.y - dirY * dy * 0.12, A.z + (B.z - A.z) * 0.75);
-  return new THREE.CubicBezierCurve3(A.clone(), c1, c2, B.clone());
+// Branche continue : elle naît à l'intérieur de sa branche mère, décalée vers
+// son côté (les branches filles se partagent la section de la mère, comme dans
+// la vue chronologique), part dans le prolongement de la mère (tangente T),
+// puis s'incline vers son nœud ; elle y arrive avec la tangente E, que ses
+// propres branches filles prolongeront.
+function branchCurve(S, T, B, E) {
+  const L = S.distanceTo(B);
+  // Départ d'autant plus court que la branche doit tourner (pas de boucle)
+  const along = Math.max(0.12, B.clone().sub(S).normalize().dot(T));
+  return new THREE.CubicBezierCurve3(S.clone(), S.clone().addScaledVector(T, L * 0.38 * along),
+    B.clone().addScaledVector(E, -L * 0.3), B.clone());
 }
 
 // ---------- Textures dessinées ----------
@@ -267,7 +275,7 @@ export async function mount3D(container, db, opts) {
   const { desc, anc, BASE } = L;
   const n = L.descCount + L.ancCount;
   const U = (L.maxR / 70) * Math.max(1, Math.min(2.2, 2.4 - n / 80));
-  if (globalThis.__FAMILIEN_DEBUG) globalThis.__FAMILIEN_DEBUG.three = { maxR: L.maxR, U }; // taille des écriteaux, proportionnelle à l'arbre
+ // taille des écriteaux, proportionnelle à l'arbre
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -287,17 +295,33 @@ export async function mount3D(container, db, opts) {
 
   // ----- Bois : tronc, branches, racines -----
   const wood = new WoodBuilder();
-  const knots = [];
-  wood.tube(new THREE.CatmullRomCurve3([
+  const UP = new THREE.Vector3(0, 1, 0);
+  const trunk = new THREE.CatmullRomCurve3([
     new THREE.Vector3(0, -2, 0), new THREE.Vector3(0.6, BASE * 0.35, 0.3),
     new THREE.Vector3(-0.4, BASE * 0.7, -0.2), new THREE.Vector3(0, BASE, 0),
-  ]), L.trunkR * 1.12, desc.r1, 24, 14);
-  knots.push([desc.pos, desc.r1]);
+  ]);
+  wood.tube(trunk, L.trunkR * 1.12, desc.r1, 24, 14);
+  desc.T = trunk.getTangentAt(1).normalize();
+  desc.v = WoodBuilder.length(trunk);
+  anc.T = new THREE.Vector3(0, -1, 0);
+  anc.pos = new THREE.Vector3(0, -1.5, 0);
+  anc.r1 = L.trunkR * 1.12;
+  anc.v = 0;
+  const ss = (t) => t * t * (3 - 2 * t);
+  // Chaque branche fille naît exactement dans le prolongement de sa mère, avec la
+  // même section : le bois est continu. Elle s'affine en s'écartant de ses sœurs.
   const grow = (n, dirY) => {
     for (const k of n.kids) {
-      const radial = k.kids.length ? 8 : 6;
-      wood.tube(branchCurve(n.pos, k.pos, dirY), k.r0, k.r1, 22, radial);
-      if (k.kids.length) knots.push([k.pos, k.r1]);
+      // Plus les enfants s'étalent autour du nœud, plus la branche y arrive verticale
+      const f = Math.min(1, (k.kids.length ? k.slot : 0) / 2);
+      const E = k.pos.clone().sub(n.pos).normalize().multiplyScalar(1 - 0.8 * f).addScaledVector(UP, dirY * (0.7 + 1.5 * f)).normalize();
+      k.T = E;
+      const S = n.pos.clone().addScaledVector(n.T, -n.r1 * 0.3);
+      const curve = branchCurve(S, n.T, k.pos, E);
+      const R = n.r1, a = k.r0, b = k.r1;
+      const rad = (t) => (t < 0.18 ? R + (a - R) * ss(t / 0.18) : a + (b - a) * ss((t - 0.18) / 0.82));
+      wood.tube(curve, rad, 0, 26, k.kids.length ? 10 : 6, n.v);
+      k.v = n.v + WoodBuilder.length(curve);
       grow(k, dirY);
     }
   };
@@ -307,12 +331,7 @@ export async function mount3D(container, db, opts) {
   const woodMat = keep(new THREE.MeshStandardMaterial({ map: bark, roughness: 0.9, metalness: 0 }));
   const woodGeo = keep(wood.geometry());
   scene.add(new THREE.Mesh(woodGeo, woodMat));
-  // Nœuds arrondis aux fourches
-  const knotGeo = keep(new THREE.SphereGeometry(1, 14, 10));
-  const knotMesh = new THREE.InstancedMesh(knotGeo, woodMat, knots.length);
   const M = new THREE.Matrix4();
-  knots.forEach(([p, r], i) => knotMesh.setMatrixAt(i, M.makeScale(r * 1.08, r * 1.08, r * 1.08).setPosition(p)));
-  scene.add(knotMesh);
 
   // ----- Feuillage au bout des branches -----
   const leafEnds = [];
@@ -482,6 +501,8 @@ export async function mount3D(container, db, opts) {
   const ro = new ResizeObserver(resize);
   ro.observe(container);
 
+  if (globalThis.__FAMILIEN_DEBUG) globalThis.__FAMILIEN_DEBUG.three = { camera, controls, L };
+
   // ----- Toucher un écriteau : ouvre la fiche (le conjoint, s'il est touché) -----
   const ray = new THREE.Raycaster();
   const ptr = new THREE.Vector2();
@@ -551,7 +572,7 @@ export async function mount3D(container, db, opts) {
       controls.dispose();
       for (const sp of signs) { sp.material.map.dispose(); sp.material.dispose(); }
       for (const d of disposables) d.dispose?.();
-      knotMesh.dispose(); leaves.dispose();
+      leaves.dispose();
       renderer.dispose();
       renderer.forceContextLoss?.();
       el.remove();
