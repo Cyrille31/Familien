@@ -9,7 +9,7 @@
 // (effet de cylindre).
 
 import { buildAncestors, buildDescendants } from './tree.js';
-import { el, text, rng, fit, f2, INK, cyl, drawGrain, wave, perpendiculars, taper, trunkShape, drawSoil, drawSurfaceLife, spousesMainFirst, marriageDate } from './oak.js';
+import { el, text, rng, fit, f2, INK, cyl, drawGrain, wave, perpendiculars, taper, trunkShape, drawSoil, drawSurfaceLife, spousesMainFirst, marriageDate, birthName, textFit } from './oak.js';
 
 const K = 6.5;          // pixels par année
 const GROUND = 440;     // le sol, sous le centre de l'éventail
@@ -320,11 +320,12 @@ function renderChrono(g, db, o) {
     let lines;
     if (spouses.length) {
       const sp = db.get(spouses[0]);
-      const spLine = sp.name + (sp.birthYear ? ' ' + sp.birthYear : '') + (spouses.length > 1 ? ` (+${spouses.length - 1})` : '');
+      const spName = birthName(sp);
+      const spLine = spName + (sp.birthYear ? ' ' + sp.birthYear : '') + (spouses.length > 1 ? ` (+${spouses.length - 1})` : '');
       lines = [
-        [...shorten(k, p, room), 'ch-name', -13],
+        [...shorten(k, { ...p, name: birthName(p) }, room), 'ch-name', -13],
         [marriageText(db, k.id, spouses[0]), 1, 'ch-date', 1],
-        [...sized([spLine, sp.name], room), 'ch-name spouse', 15],
+        [...sized([spLine, spName], room), 'ch-name spouse', 15],
       ];
     } else lines = [[...shorten(k, p, room), 'ch-name', 4]];
     const w = Math.max(...lines.map((l) => l[0].length * CH * l[1])) + 10;
@@ -356,14 +357,14 @@ function renderChrono(g, db, o) {
   const rg = el('g', { class: 't-person ch-person', 'data-id': root.id }, g);
   el('rect', { x: -W / 2, y: cy - H / 2, width: W, height: spouseId ? H / 2 - 12 : H, fill: 'transparent' }, rg);
   const top = spouseId ? cy - 42 : cy - 4;
-  text(rg, 0, top, fit(root.name, 22), 'ch-script', { 'text-anchor': 'middle' });
+  textFit(rg, 0, top, spouseId ? birthName(root) : root.name, 'ch-script', { 'text-anchor': 'middle' }, 19, 0.4);
   text(rg, 0, top + 22, life(root, rootEst, y0), 'ch-italic', { 'text-anchor': 'middle' });
   if (spouseId) {
     const sp = db.get(spouseId);
     text(g, 0, cy + 12, marriageText(db, root.id, spouseId), 'ch-date big', { 'text-anchor': 'middle' });
     const sg = el('g', { class: 't-person ch-person', 'data-id': spouseId }, g);
     el('rect', { x: -W / 2, y: cy + 18, width: W, height: H / 2 - 18, fill: 'transparent' }, sg);
-    text(sg, 0, cy + 44, fit(sp.name, 22), 'ch-script', { 'text-anchor': 'middle' });
+    textFit(sg, 0, cy + 44, birthName(sp), 'ch-script', { 'text-anchor': 'middle' }, 19, 0.4);
     text(sg, 0, cy + 64, life(sp, false), 'ch-italic', { 'text-anchor': 'middle' });
   }
 
