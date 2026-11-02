@@ -491,7 +491,7 @@ export async function mount3D(container, db, opts) {
   };
   const coupleLines = (k) => {
     const p = db.get(k.id);
-    const lines = [{ text: p.name, id: k.id, size: 38 }];
+    const lines = [{ text: birthName(p), id: k.id, size: 38 }];
     const l = life(p, k.est);
     if (l) lines.push({ text: l, id: k.id, italic: true, size: 28 });
     const sps = spousesMainFirst(db, k.id);
@@ -499,7 +499,6 @@ export async function mount3D(container, db, opts) {
       const d = marriageDate(db, k.id, sps[0]);
       lines.push({ text: d ? `∞ ${d}` : '∞', id: sps[0], size: 26 });
       const sp = db.get(sps[0]);
-      lines[0].text = birthName(p);
       lines.push({ text: birthName(sp) + (sps.length > 1 ? ` (+${sps.length - 1})` : ''), id: sps[0], italic: true, size: 32 });
     }
     return lines;
@@ -512,7 +511,7 @@ export async function mount3D(container, db, opts) {
   const hang = (k, size, dirY) => {
     const out = new THREE.Vector3(Math.cos(k.angle), 0, Math.sin(k.angle));
     const lines = dirY > 0 ? coupleLines(k)
-      : [{ text: db.get(k.id).name, id: k.id, size: 36 }, { text: life(db.get(k.id), k.est), id: k.id, italic: true, size: 28 }].filter((l) => l.text);
+      : [{ text: birthName(db.get(k.id)), id: k.id, size: 36 }, { text: life(db.get(k.id), k.est), id: k.id, italic: true, size: 28 }].filter((l) => l.text);
     const leaf = !k.kids.length;
     const at = k.pos.clone();
     let sp;

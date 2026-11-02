@@ -479,8 +479,10 @@ export function renderInto(g, db, tree) {
     el('title', {}, box).textContent = `${p.name}${p.birthDate ? '\nNé(e) : ' + p.birthDate : ''}${p.deathDate ? '\nDécès : ' + p.deathDate : ''}`;
     el('rect', { width: BOX_W, height: BOX_H, rx: 12, class: 't-card' }, box);
     el('rect', { width: 6, height: BOX_H - 20, x: 0, y: 10, rx: 3, class: 't-band' }, box);
-    const hasLast = p.firstName && p.lastName;
-    let lastLines = hasLast ? [p.lastName.toUpperCase()] : [];
+    // Nom de naissance (nom de jeune fille) plutôt que nom d'usage
+    const last = p.maidenName || p.lastName;
+    const hasLast = p.firstName && last;
+    let lastLines = hasLast ? [last.toUpperCase()] : [];
     // Nom de famille trop long : réparti sur deux lignes, à l'espace le plus central
     if (lastLines.length && lastLines[0].length > 26) {
       const n = lastLines[0], mid = n.length / 2;

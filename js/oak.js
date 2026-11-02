@@ -58,6 +58,20 @@ export function lifeSpan(p) {
   return '';
 }
 
+// Largeur d'un texte en écriture cursive (Pinyon Script), mesurée si la police est chargée
+let scriptCtx = null;
+export function scriptWidth(str, px) {
+  const font = `${px}px 'Pinyon Script'`;
+  try {
+    if (document.fonts?.check(font)) {
+      scriptCtx ||= document.createElement('canvas').getContext('2d');
+      scriptCtx.font = font;
+      return scriptCtx.measureText(str).width;
+    }
+  } catch { /* estimation ci-dessous */ }
+  return str.length * px * 0.43;
+}
+
 // Nom de naissance (nom de jeune fille), pour les couples
 export function birthName(p) {
   if (!p) return '';
@@ -726,18 +740,24 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
   const cy = -T * 0.42;
   const spId = spousesMainFirst(db, root.id)[0];
   const ph = spId ? 160 : 104;
-  el('path', { d: `M-128 ${cy - ph / 2}h256c-10 18 -10 ${ph - 18} 0 ${ph}h-256c10 -18 10 ${-(ph - 18)} 0 ${-ph}Z`, class: 'oak-plaque' }, rg);
-  el('path', { d: `M-118 ${cy - ph / 2 + 8}h236c-8 16 -8 ${ph - 32} 0 ${ph - 16}h-236c8 -16 8 ${-(ph - 32)} 0 ${-(ph - 16)}Z`, class: 'oak-plaque-inner' }, rg);
+  // Le cartouche s'élargit pour les noms longs, avant de réduire l'écriture
+  const rootName = birthName(root), spName = spId ? birthName(db.get(spId)) : '';
+  const nw = Math.max(scriptWidth(rootName, 30), scriptWidth(spName, 30));
+  const hw = Math.round(Math.max(128, Math.min(300, nw / 2 + 32)));
+  // Au-delà de la largeur maximale, l'écriture est réduite
+  const maxCh = nw <= 2 * hw - 44 ? 999 : Math.floor(Math.max(rootName.length, spName.length) * (2 * hw - 44) / nw);
+  el('path', { d: `M${-hw} ${cy - ph / 2}h${2 * hw}c-10 18 -10 ${ph - 18} 0 ${ph}h${-2 * hw}c10 -18 10 ${-(ph - 18)} 0 ${-ph}Z`, class: 'oak-plaque' }, rg);
+  el('path', { d: `M${-hw + 10} ${cy - ph / 2 + 8}h${2 * hw - 20}c-8 16 -8 ${ph - 32} 0 ${ph - 16}h${-(2 * hw - 20)}c8 -16 8 ${-(ph - 32)} 0 ${-(ph - 16)}Z`, class: 'oak-plaque-inner' }, rg);
   // Le couple : le descendant au-dessus, la date de mariage, puis le conjoint
   const top = spId ? cy - 40 : cy - 8;
-  textFit(rg, 0, top, spId ? birthName(root) : root.name, 'oak-script', { 'text-anchor': 'middle' }, 22, 0.4);
+  textFit(rg, 0, top, rootName, 'oak-script', { 'text-anchor': 'middle' }, maxCh, 0.4);
   text(rg, 0, top + 22, lifeSpan(root), 'oak-italic', { 'text-anchor': 'middle' });
   if (spId) {
     const sp = db.get(spId);
     text(rg, 0, cy + 14, marriage(root.id, spId), 'oak-italic', { 'text-anchor': 'middle' });
     const sg = el('g', { class: 't-person oak-person', 'data-id': spId }, g);
-    el('rect', { x: -120, y: cy + 22, width: 240, height: 54, fill: 'transparent' }, sg);
-    textFit(sg, 0, cy + 46, birthName(sp), 'oak-script', { 'text-anchor': 'middle' }, 22, 0.4);
+    el('rect', { x: -hw + 8, y: cy + 22, width: 2 * hw - 16, height: 54, fill: 'transparent' }, sg);
+    textFit(sg, 0, cy + 46, spName, 'oak-script', { 'text-anchor': 'middle' }, maxCh, 0.4);
     text(sg, 0, cy + 68, lifeSpan(sp), 'oak-small', { 'text-anchor': 'middle' });
   }
 
@@ -749,7 +769,7 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
   // ---------- Éléments graphiques ----------
 
   function label(grp, x, y, p, spouses) {
-    const lines = [spouses.length ? birthName(p) : p.name, lifeSpan(p), spouseLine(db, spouses)].filter(Boolean);
+    const lines = [birthName(p), lifeSpan(p), spouseLine(db, spouses)].filter(Boolean);
     const top = y - (lines.length - 1) * 8 + 4;
     el('rect', { x: x - LEAF_L / 2, y: y - LEAF_H / 2, width: LEAF_L, height: LEAF_H, fill: 'transparent' }, grp);
     lines.forEach((s, i) => {
@@ -765,7 +785,7 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
   }
 
   function ribbon(grp, x, y, p, spouses) {
-    const name = spouses.length ? birthName(p) : p.name;
+    const name = birthName(p);
     const w = Math.max(110, Math.min(200, name.length * 8.6 + 34));
     const h = 26;
     const l = x - w / 2, t = y - h / 2;
@@ -793,7 +813,7 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
     const w = NODE_W, h = 58;
     el('rect', { x: x - w / 2, y: y - h / 2, width: w, height: h, rx: 26, class: 'oak-plaque' }, grp);
     el('rect', { x: x - w / 2 + 5, y: y - h / 2 + 5, width: w - 10, height: h - 10, rx: 21, class: 'oak-plaque-inner' }, grp);
-    textFit(grp, x, y - 2, p.name, 'oak-name', { 'text-anchor': 'middle' }, 20);
+    textFit(grp, x, y - 2, birthName(p), 'oak-name', { 'text-anchor': 'middle' }, 20);
     text(grp, x, y + 16, lifeSpan(p), 'oak-small', { 'text-anchor': 'middle' });
     if (more) text(grp, x, y + h / 2 + 14, '…', 'oak-small', { 'text-anchor': 'middle' });
   }
