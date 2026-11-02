@@ -7,7 +7,7 @@
 import * as THREE from './vendor/three.module.min.js';
 import { OrbitControls } from './vendor/OrbitControls.js';
 import { buildAncestors, buildDescendants } from './tree.js';
-import { spousesMainFirst, marriageDate } from './oak.js';
+import { spousesMainFirst, marriageDate, birthName } from './oak.js';
 
 const GEN = 28;        // écart moyen entre générations (année inconnue)
 const NEED_FORK = 15;  // place autour du cercle pour un écriteau de couple
@@ -263,12 +263,13 @@ function rounded(x, X, Y, W, H, r) {
 function plank(lines, opts = {}) {
   const S = opts.small ? 1.1 : 1.4; // résolution (mémoire limitée sur téléphone)
   const pad = 22, lh = opts.small ? 34 : 40;
+  const padX = opts.small ? pad : 36; // les clous restent hors du texte
   const ctx0 = measure;
   const fontOf = (l) => `${l.italic ? 'italic ' : ''}${l.size || (opts.small ? 30 : 34)}px ${FONT}`;
   let w = 0;
   for (const l of lines) { ctx0.font = fontOf(l); w = Math.max(w, ctx0.measureText(l.text).width); }
   const maxW = opts.small ? 360 : 440;
-  w = Math.min(Math.max(w, 120), maxW) + pad * 2;
+  w = Math.min(Math.max(w, 120), maxW) + padX * 2;
   const h = lines.length * lh + pad * 1.3;
   const c = document.createElement('canvas');
   c.width = Math.ceil(w * S / 2) * 2; c.height = Math.ceil(h * S / 2) * 2;
@@ -288,7 +289,7 @@ function plank(lines, opts = {}) {
     x.beginPath(); x.moveTo(0, yy); x.bezierCurveTo(w * 0.3, yy - 4, w * 0.6, yy + 4, w, yy - 2); x.stroke();
   }
   x.restore();
-  if (!opts.small) for (const px of [16, w - 16]) { x.beginPath(); x.arc(px, 14, 4, 0, 7); x.fillStyle = '#4a3218'; x.fill(); }
+  if (!opts.small) for (const px of [17, w - 17]) { x.beginPath(); x.arc(px, h / 2, 4, 0, 7); x.fillStyle = '#4a3218'; x.fill(); }
   // Texte
   x.fillStyle = INK; x.textAlign = 'center'; x.textBaseline = 'middle';
   const bands = [];
@@ -296,7 +297,7 @@ function plank(lines, opts = {}) {
     x.font = fontOf(l);
     const yy = pad * 0.65 + lh * (i + 0.5);
     const tw = x.measureText(l.text).width;
-    const sc = Math.min(1, (w - pad * 2) / tw);
+    const sc = Math.min(1, (w - padX * 2) / tw);
     x.save(); x.translate(w / 2, yy); x.scale(sc, 1); x.fillText(l.text, 0, 0); x.restore();
     bands.push({ y0: (yy - lh / 2) / h, y1: (yy + lh / 2) / h, id: l.id });
   });
@@ -498,7 +499,8 @@ export async function mount3D(container, db, opts) {
       const d = marriageDate(db, k.id, sps[0]);
       lines.push({ text: d ? `∞ ${d}` : '∞', id: sps[0], size: 26 });
       const sp = db.get(sps[0]);
-      lines.push({ text: sp.name + (sps.length > 1 ? ` (+${sps.length - 1})` : ''), id: sps[0], italic: true, size: 32 });
+      lines[0].text = birthName(p);
+      lines.push({ text: birthName(sp) + (sps.length > 1 ? ` (+${sps.length - 1})` : ''), id: sps[0], italic: true, size: 32 });
     }
     return lines;
   };

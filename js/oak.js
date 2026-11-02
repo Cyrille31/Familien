@@ -42,9 +42,8 @@ export const fit = (s, max) => (s.length > max ? s.slice(0, max - 1) + '…' : s
 
 // Écrit le texte en entier : trop long pour `max` caractères, il est réduit
 // (jusqu'à 60 %) autour de son point d'ancrage ; au-delà seulement, il est tronqué.
-export function textFit(parent, x, y, str, cls, attrs, max) {
+export function textFit(parent, x, y, str, cls, attrs, max, MIN = 0.6) {
   if (str.length <= max) return text(parent, x, y, str, cls, attrs);
-  const MIN = 0.6;
   const sc = Math.max(MIN, max / str.length);
   const s = sc > MIN ? str : fit(str, Math.floor(max / MIN));
   return text(parent, 0, 0, s, cls, { ...attrs, transform: `translate(${f2(x)} ${f2(y)}) scale(${sc.toFixed(3)})` });
@@ -59,8 +58,14 @@ export function lifeSpan(p) {
   return '';
 }
 
+// Nom de naissance (nom de jeune fille), pour les couples
+export function birthName(p) {
+  if (!p) return '';
+  return p.maidenName ? [p.firstName, p.maidenName].filter(Boolean).join(' ') : p.name;
+}
+
 function spouseLine(db, ids) {
-  const names = ids.map((id) => db.get(id)?.name).filter(Boolean);
+  const names = ids.map((id) => birthName(db.get(id))).filter(Boolean);
   return names.length ? '∞ ' + names.join(', ') : '';
 }
 
@@ -725,14 +730,14 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
   el('path', { d: `M-118 ${cy - ph / 2 + 8}h236c-8 16 -8 ${ph - 32} 0 ${ph - 16}h-236c8 -16 8 ${-(ph - 32)} 0 ${-(ph - 16)}Z`, class: 'oak-plaque-inner' }, rg);
   // Le couple : le descendant au-dessus, la date de mariage, puis le conjoint
   const top = spId ? cy - 40 : cy - 8;
-  textFit(rg, 0, top, root.name, 'oak-script', { 'text-anchor': 'middle' }, 22);
+  textFit(rg, 0, top, spId ? birthName(root) : root.name, 'oak-script', { 'text-anchor': 'middle' }, 22, 0.4);
   text(rg, 0, top + 22, lifeSpan(root), 'oak-italic', { 'text-anchor': 'middle' });
   if (spId) {
     const sp = db.get(spId);
     text(rg, 0, cy + 14, marriage(root.id, spId), 'oak-italic', { 'text-anchor': 'middle' });
     const sg = el('g', { class: 't-person oak-person', 'data-id': spId }, g);
     el('rect', { x: -120, y: cy + 22, width: 240, height: 54, fill: 'transparent' }, sg);
-    textFit(sg, 0, cy + 46, sp.name, 'oak-script', { 'text-anchor': 'middle' }, 22);
+    textFit(sg, 0, cy + 46, birthName(sp), 'oak-script', { 'text-anchor': 'middle' }, 22, 0.4);
     text(sg, 0, cy + 68, lifeSpan(sp), 'oak-small', { 'text-anchor': 'middle' });
   }
 
@@ -744,7 +749,7 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
   // ---------- Éléments graphiques ----------
 
   function label(grp, x, y, p, spouses) {
-    const lines = [p.name, lifeSpan(p), spouseLine(db, spouses)].filter(Boolean);
+    const lines = [spouses.length ? birthName(p) : p.name, lifeSpan(p), spouseLine(db, spouses)].filter(Boolean);
     const top = y - (lines.length - 1) * 8 + 4;
     el('rect', { x: x - LEAF_L / 2, y: y - LEAF_H / 2, width: LEAF_L, height: LEAF_H, fill: 'transparent' }, grp);
     lines.forEach((s, i) => {
@@ -760,7 +765,7 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
   }
 
   function ribbon(grp, x, y, p, spouses) {
-    const name = p.name;
+    const name = spouses.length ? birthName(p) : p.name;
     const w = Math.max(110, Math.min(200, name.length * 8.6 + 34));
     const h = 26;
     const l = x - w / 2, t = y - h / 2;
@@ -770,7 +775,7 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
     el('path', { d: `M${l} ${t}Q${x} ${t - 7} ${l + w} ${t}v${h}Q${x} ${t + h - 7} ${l} ${t + h}Z`, class: 'oak-ribbon' }, grp);
     el('rect', { x: l - 16, y: t - 8, width: w + 32, height: h + 50, fill: 'transparent' }, grp);
     textFit(grp, x, y + 2, name, 'oak-name', { 'text-anchor': 'middle' }, 19);
-    const sub = [lifeSpan(p), ...(spouses.length ? [marriage(p.id, spouses[0]), db.get(spouses[0]).name + (spouses.length > 1 ? ` (+${spouses.length - 1})` : '')] : [])];
+    const sub = [lifeSpan(p), ...(spouses.length ? [marriage(p.id, spouses[0]), birthName(db.get(spouses[0])) + (spouses.length > 1 ? ` (+${spouses.length - 1})` : '')] : [])];
     sub.forEach((s, i) => {
       const into = i === 2 ? spouseGroup(grp, spouses[0], x, y + 30 + i * 15, Math.min(s.length, 28) * 6.5) : grp;
       textFit(into, x, y + 30 + i * 15, s, 'oak-small oak-halo', { 'text-anchor': 'middle' }, 28);

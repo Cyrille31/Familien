@@ -220,7 +220,7 @@ export function buildDatabase(rows, mapping) {
     const marriage = composeDate(col(row, 'marriageDM'), col(row, 'marriageY'));
     let maidenName = col(row, 'maidenName');
     // « (Buret) » = nom de naissance inconnu ; « X » = inconnu
-    if (/^\(.*\)$/.test(maidenName) || /^x$/i.test(maidenName) || normalize(maidenName) === normalize(lastName)) maidenName = '';
+    if (/^\(.*\)$/.test(maidenName) || /^(x|\?+)$/i.test(maidenName) || normalize(maidenName) === normalize(lastName)) maidenName = '';
     const p = {
       id,
       maidenName,
