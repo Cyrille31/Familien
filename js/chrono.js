@@ -9,7 +9,7 @@
 // (effet de cylindre).
 
 import { buildAncestors, buildDescendants } from './tree.js';
-import { el, text, rng, fit, f2, INK, cyl, drawGrain, wave, perpendiculars, taper, trunkShape, drawSoil, drawSurfaceLife, spousesMainFirst, marriageDate, birthName, textFit } from './oak.js';
+import { el, text, rng, fit, f2, INK, cyl, drawGrain, wave, perpendiculars, taper, trunkShape, drawSoil, drawSurfaceLife, spousesMainFirst, marriageDate, birthName, textFit, scriptWidth } from './oak.js';
 
 const K = 6.5;          // pixels par année
 const GROUND = 440;     // le sol, sous le centre de l'éventail
@@ -303,7 +303,7 @@ function renderChrono(g, db, o) {
     if (sc >= MIN) return [last, sc];
     return [fit(last, Math.max(3, Math.floor(room / (CH * MIN)))), MIN];
   };
-  const shorten = (k, p, room) => sized([`${p.name} ${yr(k)}`, p.name], room);
+  const shorten = (k, p, room) => { const n = birthName(p); return sized([`${n} ${yr(k)}`, n], room); };
   // Bout de branche : le nom file vers l'extérieur. Nœud : le nom est écrit le long
   // de la branche qui y arrive (entre le parent et le nœud), pour ne pas couvrir les enfants.
   const place = (center, k, couple, parentR) => {
@@ -323,7 +323,7 @@ function renderChrono(g, db, o) {
       const spName = birthName(sp);
       const spLine = spName + (sp.birthYear ? ' ' + sp.birthYear : '') + (spouses.length > 1 ? ` (+${spouses.length - 1})` : '');
       lines = [
-        [...shorten(k, { ...p, name: birthName(p) }, room), 'ch-name', -13],
+        [...shorten(k, p, room), 'ch-name', -13],
         [marriageText(db, k.id, spouses[0]), 1, 'ch-date', 1],
         [...sized([spLine, spName], room), 'ch-name spouse', 15],
       ];
@@ -350,21 +350,26 @@ function renderChrono(g, db, o) {
   // ----- Le couple, gravé sur le tronc -----
   const cy = GROUND * 0.5;
   const plaque = el('g', {}, g);
-  const H = spouseId ? 150 : 96, W = 280;
+  // L'écusson s'élargit pour les noms longs, avant de réduire l'écriture
+  const rootName = birthName(root), spName = spouseId ? birthName(db.get(spouseId)) : '';
+  const tw = Math.max(scriptWidth(rootName, 28), scriptWidth(spName, 28));
+  const H = spouseId ? 150 : 96;
+  const W = Math.round(Math.max(280, Math.min(600, tw + 64)));
+  const maxCh = tw <= W - 50 ? 999 : Math.floor(Math.max(rootName.length, spName.length) * (W - 50) / tw);
   el('path', { d: `M${-W / 2} ${cy - H / 2}h${W}c-10 18 -10 ${H - 36} 0 ${H}h${-W}c10 -18 10 ${-(H - 36)} 0 ${-H}Z`, class: 'ch-plaque' }, plaque);
   el('path', { d: `M${-W / 2 + 10} ${cy - H / 2 + 8}h${W - 20}c-8 15 -8 ${H - 46} 0 ${H - 16}h${-(W - 20)}c8 -15 8 ${-(H - 46)} 0 ${-(H - 16)}Z`, class: 'ch-plaque-inner' }, plaque);
   const life = (p, est, y) => `${est ? '~' : ''}${y || p.birthYear || ''}${p.deathYear ? ' – ' + p.deathYear : ''}`;
   const rg = el('g', { class: 't-person ch-person', 'data-id': root.id }, g);
   el('rect', { x: -W / 2, y: cy - H / 2, width: W, height: spouseId ? H / 2 - 12 : H, fill: 'transparent' }, rg);
   const top = spouseId ? cy - 42 : cy - 4;
-  textFit(rg, 0, top, spouseId ? birthName(root) : root.name, 'ch-script', { 'text-anchor': 'middle' }, 19, 0.4);
+  textFit(rg, 0, top, rootName, 'ch-script', { 'text-anchor': 'middle' }, maxCh, 0.4);
   text(rg, 0, top + 22, life(root, rootEst, y0), 'ch-italic', { 'text-anchor': 'middle' });
   if (spouseId) {
     const sp = db.get(spouseId);
     text(g, 0, cy + 12, marriageText(db, root.id, spouseId), 'ch-date big', { 'text-anchor': 'middle' });
     const sg = el('g', { class: 't-person ch-person', 'data-id': spouseId }, g);
     el('rect', { x: -W / 2, y: cy + 18, width: W, height: H / 2 - 18, fill: 'transparent' }, sg);
-    textFit(sg, 0, cy + 44, birthName(sp), 'ch-script', { 'text-anchor': 'middle' }, 19, 0.4);
+    textFit(sg, 0, cy + 44, spName, 'ch-script', { 'text-anchor': 'middle' }, maxCh, 0.4);
     text(sg, 0, cy + 64, life(sp, false), 'ch-italic', { 'text-anchor': 'middle' });
   }
 
