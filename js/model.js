@@ -65,8 +65,8 @@ function detectField(header) {
   if (place && death) return 'deathPlace';
   if (place && marr) return 'marriagePlace';
   // Dates en deux colonnes : jour/mois (JJMM) et année (AAAA)
-  const dm = has(/jjmm|jourmois|jour|ddmm/);
-  const yr = has(/aaaa|annee|year|yyyy/);
+  const dm = has(/jjmm|jourmois|jour|ddmm|jm$/);
+  const yr = has(/aaaa|annee|year|yyyy|an$/);
   if (birth && dm) return 'birthDM';
   if (birth && yr) return 'birthY';
   if (death && dm) return 'deathDM';
@@ -85,10 +85,29 @@ function detectField(header) {
   return null;
 }
 
+// Colonne « J-M » ou « An » sous un titre « Date de naissance » placé à sa gauche :
+// elle reprend l'événement (naissance, décès, mariage) de la colonne précédente.
+const EVENT_OF = { birthDM: 'birth', birthY: 'birth', birthDate: 'birth', deathDM: 'death', deathY: 'death', deathDate: 'death', marriageDM: 'marriage', marriageY: 'marriage', marriageDate: 'marriage' };
+function bareDatePart(header, prevKey) {
+  const ev = EVENT_OF[prevKey];
+  if (!ev) return null;
+  const h = compact(header);
+  if (/^(jm|jjmm|jourmois|ddmm|dm|jour)$/.test(h)) return ev + 'DM';
+  if (/^(an|ans|annee|aaaa|yyyy|year)$/.test(h)) return ev + 'Y';
+  return null;
+}
+
 export function detectMapping(headers) {
   const mapping = {};
+  let prev = null;
   headers.forEach((h, i) => {
-    let key = detectField(h);
+    let key = detectField(h) || bareDatePart(h, prev);
+    // « Date de naissance » suivie d'une colonne « An » : la première est le jour et le mois
+    if (key && key.endsWith('Y') && prev === EVENT_OF[key] + 'Date' && mapping[prev] === i - 1) {
+      delete mapping[prev];
+      mapping[EVENT_OF[key] + 'DM'] = i - 1;
+    }
+    prev = key;
     if (key === 'spouse' && 'spouse' in mapping) key = 'spouse2' in mapping ? 'spouse3' : 'spouse2';
     if (key && !(key in mapping)) mapping[key] = i;
   });

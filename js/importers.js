@@ -1,4 +1,4 @@
-import { findHeaderRow, headersSignature, headerScore } from './model.js';
+import { findHeaderRow, headersSignature, headerScore, detectMapping } from './model.js';
 import { readXlsx } from './xlsx.js';
 
 // Lecture des fichiers importés depuis l'appareil : CSV, ou page Google Sheets
@@ -115,7 +115,25 @@ async function xlsxToCsv(file, { chooseSheet, preferredSheet } = {}) {
     if (!name) return null; // annulé
     pick = cands.find((s) => s.name === name);
   } else pick = cands.sort((a, b) => b.score - a.score)[0];
-  return { csv: rowsToCsv(pick.rows.slice(findHeaderRow(pick.rows))), sheet: pick.name };
+  return { csv: rowsToCsv(joinHeaderRows(pick.rows)), sheet: pick.name };
+}
+
+// En-tête sur deux lignes (« Date de naissance » au-dessus de « J-M » et « An ») :
+// les deux lignes sont réunies quand cela fait reconnaître plus de colonnes.
+function joinHeaderRows(rows) {
+  const h = findHeaderRow(rows);
+  const join = (a, b) => b.map((c, i) => [a[i] || '', c].filter(Boolean).filter((x, k, arr) => arr.indexOf(x) === k).join(' '));
+  const width = (a, b) => Array.from({ length: Math.max(a.length, b.length) }, (_, i) => b[i] || '');
+  const fields = (row) => Object.keys(detectMapping(row)).length;
+  if (h > 0) {
+    const joined = join(rows[h - 1], width(rows[h - 1], rows[h]));
+    if (fields(joined) > fields(rows[h])) return [joined, ...rows.slice(h + 1)];
+  }
+  if (rows[h + 1]) {
+    const joined = join(rows[h], width(rows[h], rows[h + 1]));
+    if (fields(joined) > fields(rows[h])) return [joined, ...rows.slice(h + 2)];
+  }
+  return rows.slice(h);
 }
 
 // Renvoie { csv, sheet } (sheet : onglet Excel choisi), ou null si l'utilisateur a annulé.

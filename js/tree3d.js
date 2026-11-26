@@ -499,7 +499,7 @@ export async function mount3D(container, db, opts) {
       const d = marriageDate(db, k.id, sps[0]);
       lines.push({ text: d ? `∞ ${d}` : '∞', id: sps[0], size: 26 });
       const sp = db.get(sps[0]);
-      lines.push({ text: birthName(sp) + (sps.length > 1 ? ` (+${sps.length - 1})` : ''), id: sps[0], italic: true, size: 32 });
+      lines.push({ text: birthName(sp) + (sp.birthYear ? ' ' + sp.birthYear : '') + (sps.length > 1 ? ` (+${sps.length - 1})` : ''), id: sps[0], italic: true, size: 32 });
     }
     return lines;
   };

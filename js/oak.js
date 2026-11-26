@@ -79,7 +79,7 @@ export function birthName(p) {
 }
 
 function spouseLine(db, ids) {
-  const names = ids.map((id) => birthName(db.get(id))).filter(Boolean);
+  const names = ids.map((id) => db.get(id)).filter(Boolean).map((s) => birthName(s) + (s.birthYear ? ' ' + s.birthYear : '')).filter(Boolean);
   return names.length ? '∞ ' + names.join(', ') : '';
 }
 
@@ -795,7 +795,7 @@ function renderOak(g, db, { root, desc, anc, bbox, trunkH, tw }) {
     el('path', { d: `M${l} ${t}Q${x} ${t - 7} ${l + w} ${t}v${h}Q${x} ${t + h - 7} ${l} ${t + h}Z`, class: 'oak-ribbon' }, grp);
     el('rect', { x: l - 16, y: t - 8, width: w + 32, height: h + 50, fill: 'transparent' }, grp);
     textFit(grp, x, y + 2, name, 'oak-name', { 'text-anchor': 'middle' }, 19);
-    const sub = [lifeSpan(p), ...(spouses.length ? [marriage(p.id, spouses[0]), birthName(db.get(spouses[0])) + (spouses.length > 1 ? ` (+${spouses.length - 1})` : '')] : [])];
+    const sub = [lifeSpan(p), ...(spouses.length ? [marriage(p.id, spouses[0]), birthName(db.get(spouses[0])) + (db.get(spouses[0]).birthYear ? ' ' + db.get(spouses[0]).birthYear : '') + (spouses.length > 1 ? ` (+${spouses.length - 1})` : '')] : [])];
     sub.forEach((s, i) => {
       const into = i === 2 ? spouseGroup(grp, spouses[0], x, y + 30 + i * 15, Math.min(s.length, 28) * 6.5) : grp;
       textFit(into, x, y + 30 + i * 15, s, 'oak-small oak-halo', { 'text-anchor': 'middle' }, 28);
