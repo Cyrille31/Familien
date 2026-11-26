@@ -1,4 +1,5 @@
-import { findHeaderRow, headersSignature } from './model.js';
+import { findHeaderRow, headersSignature, headerScore } from './model.js';
+import { readXlsx } from './xlsx.js';
 
 // Lecture des fichiers importés depuis l'appareil : CSV, ou page Google Sheets
 // enregistrée (.mht / .mhtml « page web » ou .html), dont on extrait le tableau.
@@ -98,13 +99,42 @@ function rowsToCsv(rows) {
   return rows.map((r) => Array.from({ length: width }, (_, i) => csvCell(r[i] ?? '')).join(',')).join('\n');
 }
 
-export async function fileToCsv(file) {
+// Classeur Excel : l'onglet qui contient l'arbre. S'il y en a plusieurs possibles,
+// on demande lequel (chooseSheet), en proposant d'abord celui choisi la dernière fois.
+async function xlsxToCsv(file, { chooseSheet, preferredSheet } = {}) {
+  const sheets = (await readXlsx(file)).filter((s) => s.rows.length >= 2);
+  const scored = sheets.map((s) => ({ ...s, score: headerScore(s.rows), count: s.rows.length - 1 - findHeaderRow(s.rows) }));
+  const best = Math.max(0, ...scored.map((s) => s.score));
+  if (best < 2) throw new Error("Aucun onglet de ce classeur ne ressemble à une liste de personnes (colonnes Nom, Prénom, Père, Mère…).");
+  // Onglets plausibles : presque autant de colonnes reconnues que le meilleur
+  const cands = scored.filter((s) => s.score >= Math.max(2, best - 1));
+  let pick = cands[0];
+  if (cands.length > 1) {
+    const order = cands.slice().sort((a, b) => (b.name === preferredSheet) - (a.name === preferredSheet) || b.score - a.score || b.count - a.count);
+    const name = chooseSheet ? await chooseSheet(order.map(({ name, count }) => ({ name, count }))) : order[0].name;
+    if (!name) return null; // annulé
+    pick = cands.find((s) => s.name === name);
+  } else pick = cands.sort((a, b) => b.score - a.score)[0];
+  return { csv: rowsToCsv(pick.rows.slice(findHeaderRow(pick.rows))), sheet: pick.name };
+}
+
+// Renvoie { csv, sheet } (sheet : onglet Excel choisi), ou null si l'utilisateur a annulé.
+export async function fileToCsv(file, opts = {}) {
+  const lower = (file.name || '').toLowerCase();
+  if (/\.(xlsx|xlsm)$/.test(lower) || file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
+    return xlsxToCsv(file, opts);
+  }
+  const csv = await otherToCsv(file);
+  return { csv, sheet: '' };
+}
+
+async function otherToCsv(file) {
   const name = (file.name || '').toLowerCase();
   if (/\.pdf$/.test(name) || file.type === 'application/pdf') {
     throw new Error("Un PDF ne contient pas les données sous forme de tableau. Importez plutôt le fichier .mht (page enregistrée) ou un fichier .csv.");
   }
-  if (/\.(xlsx|xls|ods)$/.test(name)) {
-    throw new Error("Format non pris en charge. Dans Google Sheets : Fichier → Télécharger → Valeurs séparées par des virgules (.csv).");
+  if (/\.(xls|ods)$/.test(name)) {
+    throw new Error("Ancien format Excel (.xls) ou OpenOffice (.ods) non pris en charge : enregistrez le classeur au format .xlsx (Fichier → Enregistrer sous).");
   }
   const text = await file.text();
   const head = text.slice(0, 3000);

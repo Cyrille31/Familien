@@ -20,7 +20,7 @@ Tapez le nom d'une personne : Familien affiche son **arbre complet**, avec tous 
   - *Chronologique* : éventail des descendants au-dessus, racines des ancêtres en dessous, et des cercles d'années (tous les 5, 10, 20 ou 25 ans) : les cousins nés la même année sont sur le même cercle ; les années inconnues sont estimées (~). Les couples sont réunis (descendant, date de mariage, conjoint) sur le tronc et à chaque nœud ; quatre racines partent du tronc (parents de la personne et de son conjoint) ; les branches se partagent la largeur de leur branche mère, sans raccord, et les nervures se prolongent du tronc jusqu'aux rameaux. Tronc et branches légèrement sinueux, avec des nœuds ; sous le sol, une coupe de terrain (strates, cailloux, vers de terre) et, à la surface, herbes, fleurs, fougères, champignons, un escargot et un lapin.
   - *3D* : l'arbre chronologique en volume, à faire tourner du doigt (ou à la souris) et à zoomer en pinçant. La hauteur suit l'année de naissance, avec les cercles d'années ; les familles se répartissent tout autour du tronc et les ancêtres forment les racines, sous le sol. Un écriteau en bois est suspendu à chaque embranchement (descendant, date de mariage, conjoint) ; le toucher rapproche la caméra et ouvre la fiche (celle du conjoint si l'on touche son nom). Le bouton d'export enregistre l'image vue à l'écran.
 - **Lien entre deux personnes** : dans la fiche d'une personne, « Lien avec une autre personne… », puis choisir la 2e. L'application affiche uniquement le chemin qui les relie (ancêtre commun le plus proche, sinon descendant commun, sinon alliance) et nomme le lien (frère, nièce, cousin germain, grand-oncle…).
-- Zoom au doigt (pincer) ou à la molette, nombre de générations réglable, export de l'arbre en image PNG ou SVG (pour imprimer).
+- Zoom au doigt (pincer) ou à la molette, nombre de générations réglable, export de l'arbre en image JPG (taille et compression au choix, pour les grands arbres), PNG ou SVG (pour imprimer).
 - Thème clair / sombre automatique.
 
 ## Préparer le fichier Google Sheets
@@ -46,7 +46,7 @@ Voir le fichier [`exemple.csv`](exemple.csv).
    - **Fichier privé (recommandé)** : l'application demande de se connecter à son compte Google (lecture seule). Seuls les comptes avec qui le fichier est partagé peuvent le charger. Nécessite un identifiant client Google, voir [Fichier privé : configuration Google](#fichier-privé--configuration-google).
    - **Fichier public** : *Partager → Accès général → Tous les utilisateurs disposant du lien (Lecteur)*. Toute personne ayant le lien peut alors le lire.
 
-> 💡 Sans connexion Google : ouvrez le fichier dans le navigateur et enregistrez la page (format **.mht**, menu ⋮ → Télécharger dans Chrome Android), ou téléchargez-le en **.csv**, puis *Réglages → Importer un fichier*. Si le fichier importé diffère de votre copie, l'application montre les changements et demande votre accord.
+> 💡 Sans connexion Google : ouvrez le fichier dans le navigateur et enregistrez la page (format **.mht**, menu ⋮ → Télécharger dans Chrome Android), ou téléchargez-le en **.csv** ou en **Excel (.xlsx)**, puis *Réglages → Importer un fichier*. Si le fichier importé diffère de votre copie, l'application montre les changements et demande votre accord.
 
 > ⚠️ Le fichier doit être une vraie feuille **Google Sheets**. Pour un fichier Excel simplement déposé sur le Drive : l'ouvrir puis *Fichier → Enregistrer au format Google Sheets*.
 
@@ -104,7 +104,8 @@ Application web progressive (PWA) sans dépendance ni compilation : HTML, CSS et
 - `js/model.js` : détection des colonnes, construction des liens familiaux, comparaison de versions
 - `js/tree.js` : mise en page compacte de l'arbre, dessin SVG, zoom/déplacement tactile, export
 - `js/auth.js` : connexion Google (OAuth 2.0 par redirection, jeton en lecture seule)
-- `js/importers.js` : import d'un fichier .csv ou d'une page Google Sheets enregistrée (.mht, .html)
+- `js/importers.js` : import d'un fichier .csv, d'un classeur Excel (.xlsx : l'application demande l'onglet s'il y a un doute) ou d'une page Google Sheets enregistrée (.mht, .html)
+- `js/xlsx.js` : lecture des classeurs Excel, sans bibliothèque externe
 - `js/oak.js` : vue « chêne » (gravure)
 - `js/chrono.js` : vue chronologique (cercles d'années)
 - `js/tree3d.js` : vue 3D (chargée à la demande) ; `js/vendor/` : Three.js r170 et OrbitControls (licence MIT)

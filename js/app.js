@@ -9,7 +9,7 @@ import { findRelation } from './relation.js';
 import { computeOak, exportOakSvg, OAK_STYLE } from './oak.js';
 import { computeChrono, CHRONO_STYLE } from './chrono.js';
 
-const APP_VERSION = '1.14.1';
+const APP_VERSION = '1.15.0';
 // Fichier de la famille proposé par défaut au premier lancement
 const DEFAULT_URL = 'https://docs.google.com/spreadsheets/d/1GVpEFBoonQ2M5ZG7dK4_bNW2w1BkZXE9ZupN6cHlXYM/edit';
 // Identifiant client Google (OAuth) pour lire le fichier privé avec son compte Google.
@@ -84,7 +84,7 @@ function prepare(csv, config = state.config) {
 
 async function applyDataset(csv, meta) {
   const prep = prepare(csv);
-  state.data = { csv, hash: meta.hash || (await hashText(csv)), fetchedAt: Date.now(), source: meta.source, fileName: meta.fileName || '' };
+  state.data = { csv, hash: meta.hash || (await hashText(csv)), fetchedAt: Date.now(), source: meta.source, fileName: meta.fileName || '', sheet: meta.sheet || '' };
   state.config.mapping = prep.mapping;
   state.config.headersSig = prep.sig;
   state.headers = prep.headers;
@@ -536,7 +536,7 @@ function renderAuthInfo() {
 function renderSourceInfo() {
   const box = $('sourceInfo');
   if (!state.data || !state.db) { box.hidden = true; return; }
-  const src = { drive: 'Google Drive', file: `fichier importé${state.data.fileName ? ' « ' + state.data.fileName + ' »' : ''}`, demo: 'exemple' }[state.data.source] || '';
+  const src = { drive: 'Google Drive', file: `fichier importé${state.data.fileName ? ' « ' + state.data.fileName + ' »' : ''}${state.data.sheet ? ', onglet « ' + state.data.sheet + ' »' : ''}`, demo: 'exemple' }[state.data.source] || '';
   box.innerHTML = `<b>${state.db.persons.size}</b> personnes enregistrées sur cet appareil<br>
     <span class="muted">Source : ${esc(src)} · copie du ${esc(formatDate(state.data.fetchedAt))}</span>
     ${state.db.offsets.map((o) => `<br><span class="muted">Fiches n° ${o.from} à ${o.to} : numéros de parents et conjoints décalés de ${o.offset} (détecté automatiquement).</span>`).join('')}
@@ -607,8 +607,10 @@ $('fileInput').onchange = async (e) => {
   e.target.value = '';
   if (!file) return;
   try {
-    const csv = await fileToCsv(file);
-    const meta = { source: 'file', fileName: file.name };
+    const res = await fileToCsv(file, { chooseSheet, preferredSheet: state.data?.sheet });
+    if (!res) return; // choix de l'onglet annulé
+    const { csv, sheet } = res;
+    const meta = { source: 'file', fileName: file.name, sheet };
     if (state.data && state.db) {
       const hash = await hashText(csv);
       if (hash === state.data.hash) { toast('Ce fichier est identique à votre copie ✓'); return; }
@@ -622,6 +624,21 @@ $('fileInput').onchange = async (e) => {
     toast(`${prep.db.persons.size} personnes importées ✓ Tapez un nom pour voir son arbre.`, { duration: 6000 });
   } catch (err) { toast(err.message, { duration: 8000 }); }
 };
+
+// Classeur Excel avec plusieurs onglets possibles : l'utilisateur choisit
+function chooseSheet(list) {
+  const dlg = $('dlgSheet');
+  $('sheetList').innerHTML = list.map((s, i) => `<label><input type="radio" name="sheet" value="${esc(s.name)}"${i ? '' : ' checked'}>
+    <span>${esc(s.name)}</span><small>${s.count} ligne${s.count > 1 ? 's' : ''}</small></label>`).join('');
+  dlg.returnValue = '';
+  dlg.showModal();
+  return new Promise((resolve) => {
+    dlg.addEventListener('close', () => {
+      const r = dlg.querySelector('input[name="sheet"]:checked');
+      resolve(dlg.returnValue === 'ok' && r ? r.value : null);
+    }, { once: true });
+  });
+}
 
 $('btnDemo').onclick = async () => {
   try {
@@ -693,10 +710,92 @@ async function saveBlob(blob, filename) {
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
 }
 
-$('btnExport').onclick = async () => {
-  // Vue 3D : on enregistre l'image telle qu'on la voit
-  if (view3d) { const blob = await view3d.snapshot(); if (blob) await saveBlob(blob, fileBase() + '-3d.png'); return; }
+// Taille maximale d'une image dessinée par le navigateur (iPhone/iPad : ~16,7 millions de pixels)
+function canvasLimits() {
+  const ios = /iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.platform));
+  const android = /Android/i.test(navigator.userAgent);
+  return { area: ios ? 16.7e6 : android ? 64e6 : 120e6, side: ios ? 8192 : 16384 };
+}
+
+// Tailles proposées pour l'export JPG, selon la forme du dessin
+function jpgSizes() {
+  let aspect, { area, side } = canvasLimits();
+  if (view3d) { aspect = view3d.aspect(); side = Math.min(side, view3d.maxSize()); }
+  else aspect = state.tree.bbox.w / state.tree.bbox.h;
+  const dims = (long) => (aspect >= 1 ? [long, Math.round(long / aspect)] : [Math.round(long * aspect), long]);
+  const fits = ([w, h]) => w * h <= area && w <= side && h <= side;
+  const out = [1500, 2500, 4000, 6000, 8000, 12000, 16000].map(dims).filter(fits);
+  // La plus grande image possible sur cet appareil
+  let long = Math.min(side, Math.floor(Math.sqrt(area * Math.max(aspect, 1 / aspect))));
+  const max = dims(long);
+  if (fits(max) && (!out.length || max[0] * max[1] > out.at(-1)[0] * out.at(-1)[1] * 1.15)) out.push(max);
+  return out;
+}
+
+function fillJpgSizes() {
+  const sizes = jpgSizes();
+  const want = Number(prefs.get('jpgLong', 4000));
+  const sel = $('jpgSize');
+  let best = 0;
+  sel.innerHTML = sizes.map(([w, h], i) => {
+    if (Math.abs(Math.max(w, h) - want) < Math.abs(Math.max(...sizes[best]) - want)) best = i;
+    const cm = (n) => Math.round((n / 300) * 2.54);
+    const tag = i === sizes.length - 1 && sizes.length > 1 ? ' (max.)' : '';
+    return `<option value="${w}x${h}">${w} × ${h} px · ${cm(w)} × ${cm(h)} cm${tag}</option>`;
+  }).join('');
+  sel.selectedIndex = best;
+  $('jpgQuality').value = String(prefs.get('jpgQ', 0.85));
+}
+
+$('btnExport').onclick = () => {
+  fillJpgSizes();
+  $('expOther').hidden = false;
+  $('expSvg').hidden = !!view3d;
   $('dlgExport').showModal();
+};
+
+// Dessine l'arbre (SVG) dans une image de w × h pixels
+function svgToCanvas(svg, w, h, bg) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        const ctx = c.getContext('2d');
+        if (!ctx) throw new Error('canvas');
+        if (bg) { ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h); }
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(c);
+      } catch (e) { reject(e); }
+    };
+    img.onerror = () => reject(new Error('image'));
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  });
+}
+const treeSvg = async () => (state.tree.oak ? exportOakSvg(state.db, state.tree) : exportSvgString(state.db, state.tree));
+
+$('expJpg').onclick = async () => {
+  const [w, h] = $('jpgSize').value.split('x').map(Number);
+  const q = Number($('jpgQuality').value);
+  prefs.set('jpgLong', Math.max(w, h));
+  prefs.set('jpgQ', q);
+  $('dlgExport').close();
+  toast(`Création de l'image ${w} × ${h}…`, { duration: 20000 });
+  try {
+    let blob;
+    if (view3d) blob = await view3d.snapshot({ width: w, height: h, type: 'image/jpeg', quality: q });
+    else {
+      const c = await svgToCanvas(await treeSvg(), w, h, '#ffffff');
+      blob = await new Promise((res) => c.toBlob(res, 'image/jpeg', q));
+      c.width = c.height = 1; // libère la mémoire
+    }
+    if (!blob) throw new Error('vide');
+    toast(`Image prête : ${(blob.size / 1e6).toFixed(1)} Mo`);
+    await saveBlob(blob, fileBase() + (view3d ? '-3d' : '') + '.jpg');
+  } catch {
+    toast("Image trop grande pour cet appareil : choisissez une taille plus petite.", { duration: 6000 });
+  }
 };
 $('expSvg').onclick = async () => {
   $('dlgExport').close();
@@ -705,6 +804,8 @@ $('expSvg').onclick = async () => {
 };
 $('expPng').onclick = async () => {
   $('dlgExport').close();
+  // Vue 3D : l'image telle qu'on la voit
+  if (view3d) { const blob = await view3d.snapshot(); if (blob) await saveBlob(blob, fileBase() + '-3d.png'); return; }
   const { w, h } = state.tree.bbox;
   const s = state.tree.oak ? await exportOakSvg(state.db, state.tree) : exportSvgString(state.db, state.tree);
   // Limite de taille des images sur iPhone (~16 millions de pixels)

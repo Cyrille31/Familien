@@ -1,7 +1,7 @@
 // Service worker : garde l'application sur l'appareil pour un usage hors ligne.
 // Le fichier du Drive n'est jamais intercepté ni mis en cache ici : il est
 // téléchargé uniquement sur demande et enregistré par l'application.
-const VERSION = 'familien-v1.14.1';
+const VERSION = 'familien-v1.15.0';
 const ASSETS = [
   './',
   './index.html',
@@ -9,6 +9,7 @@ const ASSETS = [
   './js/app.js',
   './js/auth.js',
   './js/importers.js',
+  './js/xlsx.js',
   './js/relation.js',
   './js/oak.js',
   './js/chrono.js',

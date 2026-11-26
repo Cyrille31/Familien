@@ -229,6 +229,11 @@ button, input, select { font: inherit; color: inherit; }
 .update-ico { font-size: 40px; text-align: center; margin-top: 18px; }
 #dlgUpdate h2 { text-align: center; font-size: 20px; margin: 6px 0; }
 #dlgUpdate p { text-align: center; }
+.sel { height: 44px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-2); font-size: 16px; color: var(--text); }
+.sheet-list { display: flex; flex-direction: column; gap: 8px; }
+.sheet-list label { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
+.sheet-list input { width: 20px; height: 20px; accent-color: var(--accent, #2f7d62); }
+.sheet-list small { margin-left: auto; color: var(--muted); }
 .actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 14px; }
 .actions .btn { flex: 1; }
 
