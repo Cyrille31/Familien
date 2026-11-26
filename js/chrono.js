@@ -293,11 +293,11 @@ function renderChrono(g, db, o) {
   const labelG = el('g', {}, g);
   const CH = 6.3;
   const yr = (k) => `${k.est ? '~' : ''}${k.year}`;
-  // Le nom complet est gardé : texte un peu réduit (80 %) avec l'année, puis sans,
+  // Le nom complet est gardé : texte réduit (jusqu'à 65 %) avec l'année, puis sans,
   // puis réduit jusqu'à 55 % ; en dernier recours seulement, il est tronqué.
   const MIN = 0.55;
   const sized = (opts, room) => {
-    for (const o of opts) if (o.length * CH * 0.8 <= room) return [o, Math.min(1, room / (o.length * CH))];
+    for (const o of opts) if (o.length * CH * 0.65 <= room) return [o, Math.min(1, room / (o.length * CH))];
     const last = opts[opts.length - 1];
     const sc = room / (last.length * CH);
     if (sc >= MIN) return [last, sc];

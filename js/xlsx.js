@@ -52,8 +52,10 @@ async function readXml(files, name) {
 const tags = (node, name) => Array.from(node.getElementsByTagNameNS('*', name));
 const textOf = (node) => tags(node, 't').filter((t) => !t.closest?.('rPh')).map((t) => t.textContent).join('');
 
-// Formats de date intégrés à Excel
-const DATE_IDS = new Set([14, 15, 16, 17, 22, 27, 28, 29, 30, 31, 34, 35, 36, 45, 46, 47, 50, 51, 52, 53, 54, 55, 56, 57, 58]);
+// Formats de date intégrés à Excel (16 = « 20-juin » : jour et mois seuls ; 17 = mois et année)
+const FULL = { d: true, m: true, y: true };
+const BUILTIN_DATES = new Map([[14, FULL], [15, FULL], [16, { d: true, m: true, y: false }], [17, { d: false, m: true, y: true }], [22, FULL],
+  ...[27, 28, 29, 30, 31, 34, 35, 36, 50, 51, 52, 53, 54, 55, 56, 57, 58].map((i) => [i, FULL])]);
 
 function dateKind(code) {
   const c = code.replace(/"[^"]*"|\[[^\]]*\]|\\./g, '').toLowerCase();
@@ -102,7 +104,7 @@ export async function readXlsx(file) {
     const cellXfs = tags(styles, 'cellXfs')[0];
     for (const xf of cellXfs ? Array.from(cellXfs.children).filter((x) => x.localName === 'xf') : []) {
       const id = Number(xf.getAttribute('numFmtId') || 0);
-      xfDate.push(custom.has(id) ? dateKind(custom.get(id)) : DATE_IDS.has(id) ? { d: true, m: true, y: true } : null);
+      xfDate.push(custom.has(id) ? dateKind(custom.get(id)) : BUILTIN_DATES.get(id) || null);
     }
   }
 
@@ -115,8 +117,12 @@ export async function readXlsx(file) {
     path = path.startsWith('/') ? path.slice(1) : 'xl/' + path.replace(/^\.\//, '');
     const doc = await readXml(files, path);
     if (!doc) continue;
-    const rows = [];
+    const grid = [];
+    let rowNext = 0;
     for (const row of tags(doc, 'row')) {
+      const r = Number(row.getAttribute('r')) - 1;
+      const ri = Number.isInteger(r) && r >= 0 ? r : rowNext;
+      rowNext = ri + 1;
       const cells = [];
       let next = 0;
       for (const c of Array.from(row.children).filter((x) => x.localName === 'c')) {
@@ -138,6 +144,25 @@ export async function readXlsx(file) {
         }
         cells[i] = s.replace(/\r\n?/g, '\n').trim();
       }
+      grid[ri] = cells;
+    }
+    // Cellules fusionnées (ex. « Date de naissance » au-dessus de deux colonnes) :
+    // le texte est recopié dans chaque cellule couverte
+    for (const m of tags(doc, 'mergeCell')) {
+      const [a, b] = (m.getAttribute('ref') || '').split(':');
+      if (!a || !b) continue;
+      const pos = (ref) => [Number(ref.replace(/^[A-Z]+/, '')) - 1, colIndex(ref)];
+      const [r0, c0] = pos(a), [r1, c1] = pos(b);
+      const v = grid[r0]?.[c0];
+      if (!v || r1 - r0 > 5) continue;
+      for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+        grid[r] ||= [];
+        if (!grid[r][c]) grid[r][c] = v;
+      }
+    }
+    const rows = [];
+    for (const cells of grid) {
+      if (!cells) continue;
       for (let k = 0; k < cells.length; k++) if (cells[k] === undefined) cells[k] = '';
       if (cells.some((x) => x !== '')) rows.push(cells);
     }
