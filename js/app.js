@@ -9,7 +9,7 @@ import { findRelation } from './relation.js';
 import { computeOak, exportOakSvg, OAK_STYLE } from './oak.js';
 import { computeChrono, CHRONO_STYLE } from './chrono.js';
 
-const APP_VERSION = '1.15.1';
+const APP_VERSION = '1.15.2';
 // Fichier de la famille proposé par défaut au premier lancement
 const DEFAULT_URL = 'https://docs.google.com/spreadsheets/d/1GVpEFBoonQ2M5ZG7dK4_bNW2w1BkZXE9ZupN6cHlXYM/edit';
 // Identifiant client Google (OAuth) pour lire le fichier privé avec son compte Google.
@@ -78,7 +78,10 @@ function prepare(csv, config = state.config) {
   if (rows.length < 2) throw new Error('Le fichier est vide ou ne contient que des en-têtes.');
   const headers = rows[0].map((h) => h.trim());
   const sig = headersSignature(headers);
-  const mapping = config.mapping && config.headersSig === sig ? config.mapping : detectMapping(headers);
+  // Correspondance enregistrée, sauf si la détection automatique reconnaît désormais plus de colonnes
+  const auto = detectMapping(headers);
+  const saved = config.mapping && config.headersSig === sig ? config.mapping : null;
+  const mapping = saved && Object.keys(saved).length >= Object.keys(auto).length ? saved : auto;
   return { rows, headers, sig, mapping, db: buildDatabase(rows, mapping) };
 }
 
