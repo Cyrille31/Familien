@@ -118,7 +118,7 @@
           </ol>
         </div>
         <div class="alt-row">
-          <label class="btn ghost file-btn">Importer un fichier (.csv, .mht)<input id="fileInput" type="file"></label>
+          <label class="btn ghost file-btn">Importer un fichier (Excel, .csv, .mht)<input id="fileInput" type="file"></label>
           <button id="btnDemo" class="btn ghost">Essayer avec un exemple</button>
         </div>
         <div id="sourceInfo" class="info-box" hidden></div>
@@ -188,9 +188,42 @@
       <button class="icon-btn" value="close" aria-label="Fermer">×</button>
     </form>
     <div class="dlg-body">
-      <button id="expPng" class="btn block">Image (PNG)</button>
-      <button id="expSvg" class="btn block">Image vectorielle (SVG, idéale pour imprimer)</button>
+      <section>
+        <h3>Image JPG</h3>
+        <label class="field">Taille de l'image
+          <select id="jpgSize" class="sel"></select>
+        </label>
+        <p class="hint">Les centimètres indiquent la taille d'impression nette (300 points par pouce).</p>
+        <label class="field">Compression
+          <select id="jpgQuality" class="sel">
+            <option value="0.95">Faible : meilleure qualité, fichier lourd</option>
+            <option value="0.85">Moyenne</option>
+            <option value="0.7">Forte : fichier léger</option>
+          </select>
+        </label>
+        <button id="expJpg" class="btn primary block">Créer l'image JPG</button>
+      </section>
+      <section id="expOther">
+        <button id="expPng" class="btn block">Image PNG (taille écran)</button>
+        <button id="expSvg" class="btn block">Image vectorielle (SVG, idéale pour imprimer)</button>
+      </section>
     </div>
+  </dialog>
+
+  <!-- Choix de l'onglet d'un classeur Excel -->
+  <dialog id="dlgSheet" class="dialog narrow">
+    <form method="dialog" class="dlg-head">
+      <h2>Quel onglet ?</h2>
+      <button class="icon-btn" value="cancel" aria-label="Fermer">×</button>
+    </form>
+    <form method="dialog" class="dlg-body">
+      <p class="muted">Plusieurs onglets du classeur ressemblent à une liste de personnes. Lequel contient l'arbre ?</p>
+      <div id="sheetList" class="sheet-list"></div>
+      <div class="actions">
+        <button class="btn ghost" value="cancel">Annuler</button>
+        <button class="btn primary" value="ok">Importer</button>
+      </div>
+    </form>
   </dialog>
 
   <div id="toast" class="toast" role="status" hidden></div>

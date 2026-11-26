@@ -96,6 +96,13 @@ export function detectMapping(headers) {
 }
 
 // Trouve la ligne des titres (le fichier peut commencer par un titre ou une date).
+// Nombre de colonnes reconnues dans la meilleure ligne d'en-tête
+export function headerScore(rows) {
+  let best = 0;
+  for (const row of rows.slice(0, 15)) best = Math.max(best, new Set(row.map(detectField).filter(Boolean)).size);
+  return best;
+}
+
 export function findHeaderRow(rows) {
   let best = 0, bestScore = -1;
   rows.slice(0, 15).forEach((row, i) => {

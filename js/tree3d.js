@@ -648,10 +648,29 @@ export async function mount3D(container, db, opts) {
       camera.position.copy(controls.target).add(d.setLength(len));
       controls.update();
     },
-    snapshot() {
+    // Image de la vue ; avec width/height, rendue à cette taille (même cadrage)
+    snapshot(o = {}) {
+      const type = o.type || 'image/png';
+      if (!o.width) {
+        renderer.render(scene, camera);
+        return new Promise((res) => el.toBlob(res, type, o.quality));
+      }
+      const size = renderer.getSize(new THREE.Vector2()), pr = renderer.getPixelRatio();
+      renderer.setPixelRatio(1);
+      renderer.setSize(o.width, o.height, false);
       renderer.render(scene, camera);
-      return new Promise((res) => el.toBlob(res, 'image/png'));
+      return new Promise((res) => el.toBlob((b) => {
+        renderer.setPixelRatio(pr);
+        renderer.setSize(size.x, size.y, false);
+        res(b);
+      }, type, o.quality));
     },
+    // Côté maximal d'une image rendue par la carte graphique
+    maxSize() {
+      const gl = renderer.getContext();
+      return Math.min(gl.getParameter(gl.MAX_RENDERBUFFER_SIZE), gl.getParameter(gl.MAX_VIEWPORT_DIMS)[0], 16384);
+    },
+    aspect() { return el.width / el.height; },
     dispose() {
       renderer.setAnimationLoop(null);
       ro.disconnect();
